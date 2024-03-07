@@ -1,6 +1,8 @@
 // ==UserScript==
 // @name         Spotify to a-tisket Import Button
 // @namespace    http://tampermonkey.net/
+// @downloadURL https://github.com/YoGo9/Scripts/raw/main/Spotify_to_a-tisket.user.js
+// @updateURL   https://github.com/YoGo9/Scripts/raw/main/Spotify_to_a-tisket.user.js
 // @version      0.1
 // @description  Adds a button to Spotify album pages to import the album into a-tisket.
 // @author       YoMo
