@@ -1,0 +1,1 @@
+javascript:(function(){var link=window.location.href;if(link.includes('spotify.com')){window.open('https://odesli.co/' + link);}else{alert('This is not a Spotify link.');}})();
