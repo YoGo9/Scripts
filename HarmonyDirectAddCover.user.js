@@ -46,16 +46,15 @@
                 // Check if the link already exists to avoid duplication
                 if (!cover.querySelector('.add-cover-art-link')) {
                     // Create the link element
-                    const link = document.createElement('a');
-                    link.href = addCoverArtURL;
-                    link.textContent = `Add Cover Art`; 
-                    link.target = '_blank';
-                    link.className = 'add-cover-art-link'; // Add a class to identify the link
-                    link.style.display = 'block';
-                    link.style.marginTop = '5px';
+                    const link = document.createElement('span');
+                    link.innerHTML =  `+ Add Cover Art`;
+                    link.onclick = function() {
+                        window.open(addCoverArtURL, '_blank').focus();
+                    };
+                    link.className = 'label add-cover-art-link';
 
                     // Append the link to the cover container
-                    cover.appendChild(link);
+                    cover.childNodes[1].appendChild(link);
                 }
             }
         });
@@ -64,3 +63,20 @@
     // Run the function after the page content has fully loaded
     window.addEventListener('load', addCoverArtLinks);
 })();
+
+// Insert CSS into the Head
+function main() {
+    let head = document.getElementsByTagName('head')[0];
+    if (head) {
+        let style = document.createElement('style');
+        style.setAttribute('type', 'text/css');
+        style.textContent = `
+            .add-cover-art-link {
+                min-height: 1.2em;
+                cursor: pointer;
+            }
+        `;
+        head.appendChild(style);
+    }
+}
+main();
