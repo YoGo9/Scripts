@@ -59,7 +59,7 @@
 
     harmonyButton.onclick = function() {
         const currentPage = window.location.href;
-        const newURL = "https://harmony.pulsewidth.org.uk/release?url=" + encodeURIComponent(currentPage) + "&spotify&deezer&itunes&tidal&region=US";
+        const newURL = "https://harmony.pulsewidth.org.uk/release?url=" + encodeURIComponent(currentPage) + "&category=all";
         window.open(newURL, '_blank').focus();
     };
 
