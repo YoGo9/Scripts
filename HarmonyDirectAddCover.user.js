@@ -3,8 +3,8 @@
 // @namespace    http://tampermonkey.net/
 // @downloadURL  https://github.com/YoGo9/Scripts/raw/main/HarmonyDirectAddCover.user.js
 // @updateURL    https://github.com/YoGo9/Scripts/raw/main/HarmonyDirectAddCover.user.js
-// @version      0.1
-// @description  Dynamically adds "Add Cover Art" links to Harmony importer for each cover image (without provider name).
+// @version      0.2
+// @description  Dynamically adds "Add Cover Art" links to Harmony importer for each cover image with Front type checked.
 // @author       YoGo9
 // @match        https://harmony.pulsewidth.org.uk/release/actions*
 // @grant        none
@@ -40,8 +40,9 @@
             if (img) {
                 const imgUrl = img.src.replace(/\/250x250bb\.jpg/, '/1000x1000bb.jpg'); // Get high-quality image URL
 
-                // Construct the Add Cover Art URL
-                const addCoverArtURL = `${baseMusicBrainzURL}?x_seed.image.0.url=${encodeURIComponent(imgUrl)}&x_seed.origin=${encodeURIComponent(window.location.href)}`;
+                // Construct the Add Cover Art URL with front type (type 1) set
+                // The front type ID is 1, and we use JSON.stringify([1]) to format it correctly
+                const addCoverArtURL = `${baseMusicBrainzURL}?x_seed.image.0.url=${encodeURIComponent(imgUrl)}&x_seed.image.0.types=${encodeURIComponent(JSON.stringify([1]))}&x_seed.origin=${encodeURIComponent(window.location.href)}`;
 
                 // Check if the link already exists to avoid duplication
                 if (!cover.querySelector('.add-cover-art-link')) {
