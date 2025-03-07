@@ -16,6 +16,7 @@
 // @match         *://*.musicbrainz.org/event/*
 // @match         *://*.musicbrainz.org/label/*
 // @match         *://*.musicbrainz.org/place/*
+// @match         *://*.musicbrainz.org/release-group/*
 // @match         *://*.musicbrainz.org/series/*
 // @match         *://*.musicbrainz.org/url/*
 // @match         *://*.musicbrainz.org/dialog*
@@ -23,6 +24,7 @@
 // @match         *://*.musicbrainz.eu/event/*
 // @match         *://*.musicbrainz.eu/label/*
 // @match         *://*.musicbrainz.eu/place/*
+// @match         *://*.musicbrainz.eu/release-group/*
 // @match         *://*.musicbrainz.eu/series/*
 // @match         *://*.musicbrainz.eu/url/*
 // @match         *://*.musicbrainz.eu/dialog*
@@ -461,7 +463,7 @@
     const location = document.location.href;
     if (location.match("^https?://((beta|test)\\.)?musicbrainz\\.(org|eu)/dialog")) {
         if ((new URLSearchParams(document.location.search))
-            .get("path").match("^/(artist|event|label|place|series)/create")) {
+            .get("path").match("^/(artist|event|label|place|release-group|series)/create")) {
             runUserscript();
         }
     } else if (location.match("^https?://((beta|test)\\.)?musicbrainz\\.(org|eu)/url")) {
