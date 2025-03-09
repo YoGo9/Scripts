@@ -20,6 +20,14 @@ This script converts Wikipedia links to their equivalent Wikidata entities in Mu
 
 This script directly adds cover art from Harmony Music to MusicBrainz.
 
-## Acknowledgements
 
-These scripts were developed with assistance from AI tools.
+### Acknowledgements  
+
+These scripts were developed with assistance from AI tools.  
+
+Big thanks to:  
+- [ROpdebee](https://github.com/ropdebee)  
+- [jesus2099](https://github.com/jesus2099)  
+- [kellnerd](https://github.com/kellnerd)  
+
+And of course, many other MusicBrainz contributors whose userscripts AI pulled code from. Appreciate all the work you've put into the community!
