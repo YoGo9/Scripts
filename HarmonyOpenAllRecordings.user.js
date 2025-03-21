@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Harmony Open All Links
 // @namespace    http://tampermonkey.net/
-// @downloadURL  https://github.com/YoGo9/Scripts/raw/main/OpenAllRecordings.user.js
-// @updateURL    https://github.com/YoGo9/Scripts/raw/main/OpenAllRecordings.user.js
+// @downloadURL  https://github.com/YoGo9/Scripts/raw/main/HarmonyOpenAllRecordings.user.js
+// @updateURL    https://github.com/YoGo9/Scripts/raw/main/HarmonyOpenAllRecordings.user.js
 // @version      1.0
 // @description  Add a button to open all recording external ID links in new tabs
 // @author       YoGo9
