@@ -9,6 +9,7 @@
 // @downloadURL  https://raw.githubusercontent.com/YoGo9/Scripts/main/SetLanguageInReleaseEditor.user.js
 // @supportURL   https://github.com/YoGo9/Scripts/issues
 // @match        https://musicbrainz.org/release/*/edit
+// @match        https://beta.musicbrainz.org/release/*/edit
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @license      MIT
