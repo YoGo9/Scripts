@@ -10,6 +10,8 @@
 // @supportURL   https://github.com/YoGo9/Scripts/issues
 // @match        https://musicbrainz.org/release/*/edit
 // @match        https://beta.musicbrainz.org/release/*/edit
+// @match        https://musicbrainz.org/release/add*
+// @match        https://beta.musicbrainz.org/release/add*
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @license      MIT
