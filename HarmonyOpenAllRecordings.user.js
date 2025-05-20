@@ -3,11 +3,12 @@
 // @namespace    http://tampermonkey.net/
 // @downloadURL  https://github.com/YoGo9/Scripts/raw/main/HarmonyOpenAllRecordings.user.js
 // @updateURL    https://github.com/YoGo9/Scripts/raw/main/HarmonyOpenAllRecordings.user.js
-// @version      1.0
+// @version      1.1
 // @description  Add a button to open all recording external ID links in new tabs
 // @author       YoGo9
 // @match        https://harmony.pulsewidth.org.uk/release/*
 // @grant        none
+// @run-at       document-end
 // ==/UserScript==
 
 (function() {
@@ -121,8 +122,5 @@
         }
     }
 
-    // Wait for the page to fully load
-    window.addEventListener('load', () => {
-        setTimeout(addOpenAllButton, 500);
-    });
+    addOpenAllButton();
 })();
