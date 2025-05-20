@@ -3,10 +3,10 @@
 // @namespace    http://tampermonkey.net/
 // @downloadURL  https://github.com/YoGo9/Scripts/raw/main/Hide_Some_LBButtons.user.js
 // @updateURL    https://github.com/YoGo9/Scripts/raw/main/Hide_Some_LBButtons.user.js
-// @version      0.1
+// @version      0.2
 // @description  Hide love, hate, and play buttons on ListenBrainz
 // @author       YoGo9
-// @match        https://listenbrainz.org/user/*
+// @match        https://*listenbrainz.org/user/*
 // @grant        none
 // ==/UserScript==
 
