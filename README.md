@@ -38,6 +38,16 @@ This script converts Wikipedia links to their equivalent Wikidata entities in Mu
 
 Adds buttons to copy and visit the Wikidata entity for a Wikipedia page.
 
+
+## MusicBrainz Wikipedia Checker Bookmarklet
+
+Use this bookmarklet on Wikipedia category pages to check if artist links have a MusicBrainz ID or not.
+
+```javascript
+javascript:(()=>{fetch('https://raw.githubusercontent.com/YoGo9/Scripts/refs/heads/main/musicbrainz-checker-bookmarklet.js').then(r=>r.text()).then(eval);})()
+```
+
+
 ### Acknowledgements  
 
 These scripts were developed with assistance from AI tools.  
