@@ -1,13 +1,13 @@
 // ==UserScript==
-// @name         Harmony Harmony Open All Links
+// @name         Harmony Open All Links
 // @namespace    http://tampermonkey.net/
 // @downloadURL  https://github.com/YoGo9/Scripts/raw/main/HarmonyOpenAllRecordings.user.js
 // @updateURL    https://github.com/YoGo9/Scripts/raw/main/HarmonyOpenAllRecordings.user.js
-// @version      1.2
+// @version      1.3
 // @description  Adds a button to Harmony to open all recording links; listens for a submit trigger on MusicBrainz edit pages
 // @author       YoGo9
 // @match        https://harmony.pulsewidth.org.uk/release/*
-// @match        https://musicbrainz.org/*/edit*
+// @match        https://*.musicbrainz.org/recording/*/edit*
 // @grant        none
 // @run-at       document-end
 // ==/UserScript==
@@ -16,7 +16,7 @@
   'use strict';
 
   // MUSICBRAINZ SUBMIT LISTENER
-  if (location.hostname === "musicbrainz.org" && location.href.includes("/edit")) {
+  if (location.hostname.endsWith("musicbrainz.org") && location.href.includes("/edit")) {
     const channel = new BroadcastChannel('mb_edit_channel');
 
     channel.addEventListener('message', (e) => {
