@@ -19,12 +19,18 @@
   if (location.hostname.endsWith("musicbrainz.org") && location.href.includes("/edit")) {
     const channel = new BroadcastChannel('mb_edit_channel');
 
-    channel.addEventListener('message', (e) => {
-      if (e.data === 'submit-edit') {
-        const btn = document.querySelector('button.submit.positive[type="submit"]');
-        if (btn) btn.click();
-      }
-    });
+   channel.addEventListener('message', (e) => {
+  if (e.data === 'submit-edit') {
+    const btn = document.querySelector('button.submit.positive[type="submit"]');
+    if (btn) btn.click();
+  }
+
+  if (e.data === 'close-tab') {
+    // Delay close slightly to ensure submit was processed
+    setTimeout(() => window.close(), 1500);
+  }
+});
+
 
     console.log("✅ MB Submit Listener Active");
   }
