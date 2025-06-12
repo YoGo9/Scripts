@@ -3,8 +3,8 @@
 // @namespace    http://tampermonkey.net/
 // @downloadURL  https://github.com/YoGo9/Scripts/raw/main/HarmonyOpenAllRecordings.user.js
 // @updateURL    https://github.com/YoGo9/Scripts/raw/main/HarmonyOpenAllRecordings.user.js
-// @version      1.3
-// @description  Adds a button to Harmony to open all recording links; listens for a submit trigger on MusicBrainz edit pages
+// @version      1.4
+// @description  Opens all MB recording edit links from Harmony. Submits and closes tabs automatically on MB edit pages with a bookmarklet.
 // @author       YoGo9
 // @match        https://harmony.pulsewidth.org.uk/release/*
 // @match        https://*.musicbrainz.org/recording/*/edit*
@@ -15,16 +15,32 @@
 (function() {
   'use strict';
 
-  // MUSICBRAINZ SUBMIT LISTENER
+  const STORAGE_KEY = 'harmony_submitted';
+
+  // MUSICBRAINZ SUBMIT LISTENER + CLOSE AFTER SUCCESS
   if (location.hostname.endsWith("musicbrainz.org") && location.href.includes("/edit")) {
     const channel = new BroadcastChannel('mb_edit_channel');
 
+    // Part 1: Listen for submit trigger
     channel.addEventListener('message', (e) => {
       if (e.data === 'submit-edit') {
         const btn = document.querySelector('button.submit.positive[type="submit"]');
-        if (btn) btn.click();
+        if (btn) {
+          sessionStorage.setItem(STORAGE_KEY, 'true');
+          btn.click();
+        }
       }
     });
+
+    // Part 2: Check if submission was triggered and current URL indicates success
+    const wasSubmitted = sessionStorage.getItem(STORAGE_KEY) === 'true';
+    const isSuccessUrl = /^https:\/\/(beta\.)?musicbrainz\.org\/recording\/[a-f0-9-]{36}\/?$/.test(location.href);
+
+    if (wasSubmitted && isSuccessUrl) {
+      sessionStorage.removeItem(STORAGE_KEY);
+      console.log("✅ Submission successful, closing tab...");
+      setTimeout(() => window.close(), 200);
+    }
 
     console.log("✅ MB Submit Listener Active");
   }
