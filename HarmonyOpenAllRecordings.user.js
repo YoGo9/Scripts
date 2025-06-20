@@ -3,11 +3,11 @@
 // @namespace    http://tampermonkey.net/
 // @downloadURL  https://github.com/YoGo9/Scripts/raw/main/HarmonyOpenAllRecordings.user.js
 // @updateURL    https://github.com/YoGo9/Scripts/raw/main/HarmonyOpenAllRecordings.user.js
-// @version      1.4
+// @version      1.5
 // @description  Opens all MB recording edit links from Harmony. Submits and closes tabs automatically on MB edit pages with a bookmarklet.
 // @author       YoGo9
 // @match        https://harmony.pulsewidth.org.uk/release/*
-// @match        https://*.musicbrainz.org/recording/*/edit*
+// @match        https://*.musicbrainz.org/recording/*
 // @grant        none
 // @run-at       document-end
 // ==/UserScript==
@@ -32,18 +32,20 @@
       }
     });
 
-    // Part 2: Check if submission was triggered and current URL indicates success
-    const wasSubmitted = sessionStorage.getItem(STORAGE_KEY) === 'true';
-    const isSuccessUrl = /^https:\/\/(beta\.)?musicbrainz\.org\/recording\/[a-f0-9-]{36}\/?$/.test(location.href);
-
-    if (wasSubmitted && isSuccessUrl) {
-      sessionStorage.removeItem(STORAGE_KEY);
-      console.log("✅ Submission successful, closing tab...");
-      setTimeout(() => window.close(), 200);
-    }
-
     console.log("✅ MB Submit Listener Active");
   }
+
+
+  // Part 2: Check if submission was triggered and current URL indicates success
+  const wasSubmitted = sessionStorage.getItem(STORAGE_KEY) === 'true';
+  const isSuccessUrl = /^https:\/\/(beta\.)?musicbrainz\.org\/recording\/[a-f0-9-]{36}\/?$/.test(location.href);
+
+  if (wasSubmitted && isSuccessUrl) {
+    sessionStorage.removeItem(STORAGE_KEY);
+    console.log("✅ Submission successful, closing tab...");
+    setTimeout(() => window.close(), 200);
+  }
+
 
   // HARMONY OPEN ALL RECORDING LINKS
   if (location.hostname === "harmony.pulsewidth.org.uk") {
