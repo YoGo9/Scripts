@@ -3,7 +3,7 @@
 // @namespace    http://tampermonkey.net/
 // @downloadURL  https://github.com/YoGo9/Scripts/raw/main/HarmonyOpenAllRecordings.user.js
 // @updateURL    https://github.com/YoGo9/Scripts/raw/main/HarmonyOpenAllRecordings.user.js
-// @version      1.4
+// @version      1.5
 // @description  Opens all MB recording edit links from Harmony. Submits and closes tabs automatically on MB edit pages with a bookmarklet.
 // @author       YoGo9
 // @match        https://harmony.pulsewidth.org.uk/release/*
