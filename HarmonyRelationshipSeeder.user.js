@@ -1,9 +1,9 @@
 // ==UserScript==
-// @name         Harmony Relationship Seeder
+// @name         Harmony Recordings Relationship Seeder
 // @namespace    http://tampermonkey.net/
 // @downloadURL  https://github.com/YoGo9/Scripts/raw/main/HarmonyRelationshipSeeder.user.js
 // @updateURL    https://github.com/YoGo9/Scripts/raw/main/HarmonyRelationshipSeeder.user.js
-// @version      1.3
+// @version      1.4
 // @description  Generate MusicBrainz relationship seeder URLs from Harmony streaming links. Creates separate seeders for each streaming service.
 // @author       YoGo9
 // @match        https://harmony.pulsewidth.org.uk/release/actions*
@@ -22,31 +22,19 @@
     }
 
     function init() {
-        // Find the first recording link section to place buttons above it
         const firstRecordingSection = document.querySelector('.message a[href*="edit-recording.url"]');
-        if (!firstRecordingSection) {
-            console.log('No recording sections found on this page');
-            return;
-        }
+        if (!firstRecordingSection) return;
 
-        // Create the seeder buttons
         createSeederButtons();
     }
 
     function createSeederButtons() {
-        // Find where to insert the buttons (before first recording message)
         const firstRecordingMessage = document.querySelector('.message:has(a[href*="edit-recording.url"])');
         if (!firstRecordingMessage) return;
 
-        // Extract what services are available
         const availableServices = getAvailableServices();
-        
-        if (availableServices.length === 0) {
-            console.log('No streaming services found');
-            return;
-        }
+        if (availableServices.length === 0) return;
 
-        // Create button container
         const buttonContainer = document.createElement('div');
         buttonContainer.className = 'message';
         
@@ -58,7 +46,7 @@
                 <p><strong>Generate Relationship Seeders:</strong></p>
         `;
 
-        // Create a button for each available service
+        // Individual service buttons
         for (let service of availableServices) {
             const serviceInfo = getServiceInfo(service);
             buttonsHtml += `
@@ -68,7 +56,7 @@
             `;
         }
 
-        // Add "All Services" button if more than one service available
+        // All Services button
         if (availableServices.length > 1) {
             buttonsHtml += `
                 <span style="margin: 0 10px; color: #666;">|</span>
@@ -81,49 +69,34 @@
         buttonsHtml += `<p style="font-size: 12px; color: #666; margin-top: 5px;">Create seeder URLs for individual services or all at once</p></div>`;
         
         buttonContainer.innerHTML = buttonsHtml;
-
-        // Insert before the first recording message
         firstRecordingMessage.parentNode.insertBefore(buttonContainer, firstRecordingMessage);
 
         // Add click handlers
-        const buttons = buttonContainer.querySelectorAll('.seeder-btn');
-        buttons.forEach(btn => {
+        buttonContainer.querySelectorAll('.seeder-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
-                const service = e.target.getAttribute('data-service');
-                generateSeederUrl(service);
+                generateSeederUrl(e.target.getAttribute('data-service'));
             });
         });
 
-        // Add click handler for "All Services" button
         const allServicesBtn = buttonContainer.querySelector('.seeder-btn-all');
         if (allServicesBtn) {
-            allServicesBtn.addEventListener('click', () => {
-                generateAllServicesSeeder();
-            });
+            allServicesBtn.addEventListener('click', generateAllServicesSeeder);
         }
     }
 
     function getAvailableServices() {
         const services = new Set();
-        const linkMessages = document.querySelectorAll('.message');
-        
-        for (let message of linkMessages) {
-            const linkText = message.textContent;
-            if (!linkText.includes('Link external IDs')) continue;
-
+        document.querySelectorAll('.message').forEach(message => {
+            if (!message.textContent.includes('Link external IDs')) return;
+            
             const entityLinks = message.querySelector('.entity-links');
-            if (!entityLinks) continue;
+            if (!entityLinks) return;
 
-            const links = entityLinks.querySelectorAll('a[href]');
-            for (let link of links) {
-                const url = link.href;
-                const service = getServiceFromUrl(url);
-                if (service !== 'unknown') {
-                    services.add(service);
-                }
-            }
-        }
-
+            entityLinks.querySelectorAll('a[href]').forEach(link => {
+                const service = getServiceFromUrl(link.href);
+                if (service !== 'unknown') services.add(service);
+            });
+        });
         return Array.from(services);
     }
 
@@ -152,7 +125,6 @@
     function generateSeederUrl(targetService) {
         try {
             const recordings = extractRecordingDataForService(targetService);
-            
             if (recordings.length === 0) {
                 alert(`No ${targetService} URLs found for recordings on this page`);
                 return;
@@ -167,104 +139,17 @@
             const seederData = buildSeederData(releaseMbid, recordings, targetService);
             const seederUrl = buildSeederUrl(releaseMbid, seederData);
 
-            // Copy to clipboard and open in new tab
             copyToClipboard(seederUrl);
             window.open(seederUrl, '_blank');
-
         } catch (error) {
             console.error('Error generating seeder:', error);
             alert('Error generating seeder URL: ' + error.message);
         }
     }
 
-    function extractReleaseMbid() {
-        // Look for MusicBrainz release link
-        const mbLink = document.querySelector('a[href*="musicbrainz.org/release/"]');
-        if (mbLink) {
-            const match = mbLink.href.match(/musicbrainz\.org\/release\/([a-f0-9-]+)/);
-            return match ? match[1] : null;
-        }
-        return null;
-    }
-
-    function extractRecordingDataForService(targetService) {
-        const recordings = [];
-        
-        // Find all "Link external IDs" messages
-        const linkMessages = document.querySelectorAll('.message');
-        
-        for (let message of linkMessages) {
-            const linkText = message.textContent;
-            if (!linkText.includes('Link external IDs')) continue;
-
-            const entityLinks = message.querySelector('.entity-links');
-            if (!entityLinks) continue;
-
-            // Extract recording MBID
-            const mbRecordingLink = entityLinks.querySelector('a[href*="musicbrainz.org/recording/"]');
-            if (!mbRecordingLink) continue;
-
-            const recordingMbid = extractMbidFromUrl(mbRecordingLink.href, 'recording');
-            if (!recordingMbid) continue;
-
-            // Extract URL for the target service
-            const serviceUrl = extractUrlForService(entityLinks, targetService);
-            
-            if (serviceUrl) {
-                recordings.push({
-                    mbid: recordingMbid,
-                    url: serviceUrl.url,
-                    types: serviceUrl.types
-                });
-            }
-        }
-
-        return recordings;
-    }
-
-    function extractUrlForService(entityLinks, targetService) {
-        const links = entityLinks.querySelectorAll('a[href]');
-
-        for (let link of links) {
-            const url = link.href;
-            const service = getServiceFromUrl(url);
-            
-            if (service === targetService) {
-                const relationshipTypes = getRelationshipTypes(url);
-                if (relationshipTypes.length > 0) {
-                    return {
-                        url: url,
-                        types: relationshipTypes
-                    };
-                }
-            }
-        }
-
-        return null;
-    }
-
-    function getRelationshipTypes(url) {
-        // Determine relationship type based on URL - using exact MusicBrainz relationship names
-        if (url.includes('open.spotify.com/track/')) {
-            return ['free streaming'];
-        } else if (url.includes('www.deezer.com/track/')) {
-            return ['free streaming'];
-        } else if (url.includes('music.apple.com/')) {
-            return ['streaming', 'purchase for download'];
-        } else if (url.includes('tidal.com/track/')) {
-            return ['free streaming'];
-        } else if (url.includes('bandcamp.com/track/')) {
-            return ['free streaming'];
-        } else if (url.includes('beatport.com/track/')) {
-            return ['purchase for download'];
-        }
-        return [];
-    }
-
     function generateAllServicesSeeder() {
         try {
             const recordings = extractAllRecordingData();
-            
             if (recordings.length === 0) {
                 alert('No streaming URLs found for recordings on this page');
                 return;
@@ -279,48 +164,96 @@
             const seederData = buildAllServicesSeederData(releaseMbid, recordings);
             const seederUrl = buildSeederUrl(releaseMbid, seederData);
 
-            // Copy to clipboard and open in new tab
             copyToClipboard(seederUrl);
             window.open(seederUrl, '_blank');
-
         } catch (error) {
             console.error('Error generating all services seeder:', error);
             alert('Error generating seeder URL: ' + error.message);
         }
     }
 
+    function extractReleaseMbid() {
+        const mbLink = document.querySelector('a[href*="musicbrainz.org/release/"]');
+        if (mbLink) {
+            const match = mbLink.href.match(/musicbrainz\.org\/release\/([a-f0-9-]+)/);
+            return match ? match[1] : null;
+        }
+        return null;
+    }
+
+    function extractRecordingDataForService(targetService) {
+        const recordings = [];
+        
+        document.querySelectorAll('.message').forEach(message => {
+            if (!message.textContent.includes('Link external IDs')) return;
+
+            const entityLinks = message.querySelector('.entity-links');
+            if (!entityLinks) return;
+
+            const mbRecordingLink = entityLinks.querySelector('a[href*="musicbrainz.org/recording/"]');
+            if (!mbRecordingLink) return;
+
+            const recordingMbid = extractMbidFromUrl(mbRecordingLink.href, 'recording');
+            if (!recordingMbid) return;
+
+            const serviceUrl = extractUrlForService(entityLinks, targetService);
+            if (serviceUrl) {
+                recordings.push({
+                    mbid: recordingMbid,
+                    url: serviceUrl.url,
+                    types: serviceUrl.types
+                });
+            }
+        });
+
+        return recordings;
+    }
+
     function extractAllRecordingData() {
         const recordings = [];
         
-        // Find all "Link external IDs" messages
-        const linkMessages = document.querySelectorAll('.message');
-        
-        for (let message of linkMessages) {
-            const linkText = message.textContent;
-            if (!linkText.includes('Link external IDs')) continue;
+        document.querySelectorAll('.message').forEach(message => {
+            if (!message.textContent.includes('Link external IDs')) return;
 
             const entityLinks = message.querySelector('.entity-links');
-            if (!entityLinks) continue;
+            if (!entityLinks) return;
 
-            // Extract recording MBID
             const mbRecordingLink = entityLinks.querySelector('a[href*="musicbrainz.org/recording/"]');
-            if (!mbRecordingLink) continue;
+            if (!mbRecordingLink) return;
 
             const recordingMbid = extractMbidFromUrl(mbRecordingLink.href, 'recording');
-            if (!recordingMbid) continue;
+            if (!recordingMbid) return;
 
-            // Extract all streaming URLs for this recording
             const streamingUrls = extractAllStreamingUrls(entityLinks);
-            
             if (streamingUrls.length > 0) {
                 recordings.push({
                     mbid: recordingMbid,
                     urls: streamingUrls
                 });
             }
-        }
+        });
 
         return recordings;
+    }
+
+    function extractUrlForService(entityLinks, targetService) {
+        const links = entityLinks.querySelectorAll('a[href]');
+
+        for (let link of links) {
+            const url = link.href;
+            const service = getServiceFromUrl(url);
+            
+            if (service === targetService) {
+                const relationshipTypes = extractRelationshipTypesFromHarmony(entityLinks, url);
+                if (relationshipTypes.length > 0) {
+                    return {
+                        url: url,
+                        types: relationshipTypes
+                    };
+                }
+            }
+        }
+        return null;
     }
 
     function extractAllStreamingUrls(entityLinks) {
@@ -332,7 +265,7 @@
             const service = getServiceFromUrl(url);
             
             if (service !== 'unknown') {
-                const relationshipTypes = getRelationshipTypes(url);
+                const relationshipTypes = extractRelationshipTypesFromHarmony(entityLinks, url);
                 if (relationshipTypes.length > 0) {
                     urls.push({
                         url: url,
@@ -342,40 +275,52 @@
                 }
             }
         }
-
         return urls;
     }
 
-    function buildAllServicesSeederData(releaseMbid, recordings) {
-        const harmonyUrl = window.location.href;
-        const availableServices = getAvailableServices();
+    function extractRelationshipTypesFromHarmony(entityLinks, targetUrl) {
+        const messageDiv = entityLinks.closest('.message');
+        const editLink = messageDiv ? messageDiv.querySelector('a[href*="edit-recording.url"]') : null;
         
-        // Build note with all album URLs
-        let note = `Release: https://musicbrainz.org/release/${releaseMbid}\nAll services from Harmony: ${harmonyUrl}`;
+        if (!editLink) return [];
+
+        const editUrl = decodeURIComponent(editLink.href);
+        const urlPattern = /edit-recording\.url\.(\d+)\.text=([^&]+)&edit-recording\.url\.\1\.link_type_id=(\d+)/g;
+        const matches = [...editUrl.matchAll(urlPattern)];
         
-        for (let service of availableServices) {
-            const albumUrl = getAlbumUrlForService(service);
-            if (albumUrl) {
-                const serviceInfo = getServiceInfo(service);
-                note += `\n${serviceInfo.name} Album: ${albumUrl}`;
+        const relationshipTypes = [];
+        
+        for (let match of matches) {
+            const [, index, encodedUrl, linkTypeId] = match;
+            const decodedUrl = decodeURIComponent(encodedUrl);
+            
+            if (decodedUrl === targetUrl) {
+                const relationshipType = getLinkTypeName(linkTypeId);
+                if (relationshipType) {
+                    relationshipTypes.push(relationshipType);
+                }
             }
         }
         
-        const seederData = {
-            note: note,
-            version: 2,  // Use version 2 for multiple URLs per recording
-            recordings: {}
+        return relationshipTypes;
+    }
+
+    function getLinkTypeName(linkTypeId) {
+        const linkTypeMap = {
+            '254': 'purchase for download',
+            '255': 'download for free', 
+            '268': 'free streaming',
+            '979': 'streaming',
+            '256': 'production',
+            '257': 'get the music',
+            '258': 'IMDB samples',
+            '285': 'allmusic',
+            '302': 'license',
+            '306': 'other databases',
+            '905': 'crowdfunding',
+            '976': 'secondhandsongs'
         };
-
-        // Add recordings with all their URLs
-        for (let recording of recordings) {
-            seederData.recordings[recording.mbid] = recording.urls.map(urlData => ({
-                url: urlData.url,
-                types: urlData.types
-            }));
-        }
-
-        return seederData;
+        return linkTypeMap[linkTypeId] || null;
     }
 
     function buildSeederData(releaseMbid, recordings, service) {
@@ -395,7 +340,6 @@
             recordings: {}
         };
 
-        // Add recordings for this service only
         for (let recording of recordings) {
             seederData.recordings[recording.mbid] = {
                 url: recording.url,
@@ -406,13 +350,37 @@
         return seederData;
     }
 
-    function extractMbidFromUrl(url, entityType) {
-        const match = url.match(new RegExp(`musicbrainz\\.org\\/${entityType}\\/([a-f0-9-]+)`));
-        return match ? match[1] : null;
+    function buildAllServicesSeederData(releaseMbid, recordings) {
+        const harmonyUrl = window.location.href;
+        const availableServices = getAvailableServices();
+        
+        let note = `Release: https://musicbrainz.org/release/${releaseMbid}\nAll services from Harmony: ${harmonyUrl}`;
+        
+        for (let service of availableServices) {
+            const albumUrl = getAlbumUrlForService(service);
+            if (albumUrl) {
+                const serviceInfo = getServiceInfo(service);
+                note += `\n${serviceInfo.name} Album: ${albumUrl}`;
+            }
+        }
+        
+        const seederData = {
+            note: note,
+            version: 2,
+            recordings: {}
+        };
+
+        for (let recording of recordings) {
+            seederData.recordings[recording.mbid] = recording.urls.map(urlData => ({
+                url: urlData.url,
+                types: urlData.types
+            }));
+        }
+
+        return seederData;
     }
 
     function getAlbumUrlForService(service) {
-        // Map service names to provider data attributes
         const providerMap = {
             'spotify': 'Spotify',
             'deezer': 'Deezer', 
@@ -425,15 +393,16 @@
         const providerName = providerMap[service];
         if (!providerName) return null;
         
-        // Find the provider list item for this service
         const providerItem = document.querySelector(`li[data-provider="${providerName}"]`);
         if (!providerItem) return null;
         
-        // Extract the album URL from the provider-id link
         const providerLink = providerItem.querySelector('a.provider-id');
-        if (!providerLink) return null;
-        
-        return providerLink.href;
+        return providerLink ? providerLink.href : null;
+    }
+
+    function extractMbidFromUrl(url, entityType) {
+        const match = url.match(new RegExp(`musicbrainz\\.org\\/${entityType}\\/([a-f0-9-]+)`));
+        return match ? match[1] : null;
     }
 
     function buildSeederUrl(releaseMbid, seederData) {
@@ -449,7 +418,6 @@
                 console.error('Failed to copy to clipboard:', err);
             });
         } else {
-            // Fallback for older browsers
             const textArea = document.createElement('textarea');
             textArea.value = text;
             document.body.appendChild(textArea);
