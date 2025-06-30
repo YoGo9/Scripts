@@ -3,7 +3,7 @@
 // @namespace    http://tampermonkey.net/
 // @downloadURL  https://github.com/YoGo9/Scripts/raw/main/HarmonyRelationshipSeeder.user.js
 // @updateURL    https://github.com/YoGo9/Scripts/raw/main/HarmonyRelationshipSeeder.user.js
-// @version      1.0
+// @version      1.1
 // @description  Generate MusicBrainz relationship seeder URLs from Harmony streaming links. Creates separate seeders for each streaming service.
 // @author       YoGo9
 // @match        https://harmony.pulsewidth.org.uk/release/actions*
@@ -40,7 +40,7 @@
 
         // Extract what services are available
         const availableServices = getAvailableServices();
-
+        
         if (availableServices.length === 0) {
             console.log('No streaming services found');
             return;
@@ -49,7 +49,7 @@
         // Create button container
         const buttonContainer = document.createElement('div');
         buttonContainer.className = 'message';
-
+        
         let buttonsHtml = `
             <svg class="icon" width="24" height="24" stroke-width="2">
                 <use xlink:href="/icon-sprite.svg#link"></use>
@@ -69,7 +69,7 @@
         }
 
         buttonsHtml += `<p style="font-size: 12px; color: #666; margin-top: 5px;">Create separate seeder URLs for each streaming service</p></div>`;
-
+        
         buttonContainer.innerHTML = buttonsHtml;
 
         // Insert before the first recording message
@@ -88,7 +88,7 @@
     function getAvailableServices() {
         const services = new Set();
         const linkMessages = document.querySelectorAll('.message');
-
+        
         for (let message of linkMessages) {
             const linkText = message.textContent;
             if (!linkText.includes('Link external IDs')) continue;
@@ -134,7 +134,7 @@
     function generateSeederUrl(targetService) {
         try {
             const recordings = extractRecordingDataForService(targetService);
-
+            
             if (recordings.length === 0) {
                 alert(`No ${targetService} URLs found for recordings on this page`);
                 return;
@@ -171,10 +171,10 @@
 
     function extractRecordingDataForService(targetService) {
         const recordings = [];
-
+        
         // Find all "Link external IDs" messages
         const linkMessages = document.querySelectorAll('.message');
-
+        
         for (let message of linkMessages) {
             const linkText = message.textContent;
             if (!linkText.includes('Link external IDs')) continue;
@@ -191,7 +191,7 @@
 
             // Extract URL for the target service
             const serviceUrl = extractUrlForService(entityLinks, targetService);
-
+            
             if (serviceUrl) {
                 recordings.push({
                     mbid: recordingMbid,
@@ -210,7 +210,7 @@
         for (let link of links) {
             const url = link.href;
             const service = getServiceFromUrl(url);
-
+            
             if (service === targetService) {
                 const relationshipTypes = getRelationshipTypes(url);
                 if (relationshipTypes.length > 0) {
@@ -251,9 +251,16 @@
     function buildSeederData(releaseMbid, recordings, service) {
         const serviceInfo = getServiceInfo(service);
         const harmonyUrl = window.location.href;
-
+        const albumUrl = getAlbumUrlForService(service);
+        
+        let note = `Release: https://musicbrainz.org/release/${releaseMbid}\n${serviceInfo.name} links from Harmony: ${harmonyUrl}`;
+        
+        if (albumUrl) {
+            note += `\n${serviceInfo.name} Album: ${albumUrl}`;
+        }
+        
         const seederData = {
-            note: `Release: https://musicbrainz.org/release/${releaseMbid}\n${serviceInfo.name} links from Harmony: ${harmonyUrl}`,
+            note: note,
             version: 1,
             recordings: {}
         };
@@ -267,6 +274,31 @@
         }
 
         return seederData;
+    }
+
+    function getAlbumUrlForService(service) {
+        // Map service names to provider data attributes
+        const providerMap = {
+            'spotify': 'Spotify',
+            'deezer': 'Deezer', 
+            'itunes': 'iTunes',
+            'tidal': 'Tidal',
+            'bandcamp': 'Bandcamp',
+            'beatport': 'Beatport'
+        };
+        
+        const providerName = providerMap[service];
+        if (!providerName) return null;
+        
+        // Find the provider list item for this service
+        const providerItem = document.querySelector(`li[data-provider="${providerName}"]`);
+        if (!providerItem) return null;
+        
+        // Extract the album URL from the provider-id link
+        const providerLink = providerItem.querySelector('a.provider-id');
+        if (!providerLink) return null;
+        
+        return providerLink.href;
     }
 
     function buildSeederUrl(releaseMbid, seederData) {
