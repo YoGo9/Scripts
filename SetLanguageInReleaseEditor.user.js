@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz Customizable Language Selector
 // @namespace    https://github.com/YoGo9/Scripts
-// @version      1.2
+// @version      1.3
 // @description  Add customizable quick-select buttons for languages in MusicBrainz release editor and work editor
 // @author       YoGo9
 // @homepage     https://github.com/YoGo9/Scripts
@@ -14,8 +14,8 @@
 // @match        https://beta.musicbrainz.org/release/add*
 // @match        https://musicbrainz.org/work/*/edit
 // @match        https://beta.musicbrainz.org/work/*/edit
-// @match        https://musicbrainz.org/work/add*
-// @match        https://beta.musicbrainz.org/work/add*
+// @match        https://musicbrainz.org/work/create*
+// @match        https://beta.musicbrainz.org/work/create*
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @license      MIT
