@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz Customizable Language Selector
 // @namespace    https://github.com/YoGo9/Scripts
-// @version      1.4
+// @version      1.5
 // @description  Add customizable quick-select buttons for languages in MusicBrainz release editor and work editor
 // @author       YoGo9
 // @homepage     https://github.com/YoGo9/Scripts
@@ -24,9 +24,8 @@
 (function () {
   'use strict';
 
-  // -------- Helpers --------
+  // ---------- Utilities ----------
 
-  // Force React-controlled <select> to a value
   function forceValue(input, value) {
     const proto = Object.getPrototypeOf(input);
     const valueSetter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
@@ -35,31 +34,30 @@
     input.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
-  // Get option by id (value) and as a small object
   function getOption(selectEl, id) {
     const opt = Array.from(selectEl.options).find(o => String(o.value) === String(id));
     return opt ? { id: String(opt.value), text: opt.text.trim() } : null;
   }
 
-  // Get all usable options (id + text); allows filtering per editor
   function getAvailableOptions(selectEl, { isWorkEditor }) {
     const out = [];
     for (const opt of selectEl.options) {
       const text = opt.text?.trim();
       if (!text || text === '—' || text === '⠀' || text.startsWith('Frequently used')) continue;
-
-      // Original behavior: in Work Editor skip "[Multiple languages]"
       if (isWorkEditor && /^\[.*multiple.*\]/i.test(text)) continue;
-
-      // In Release Editor skip "[No lyrics]"
       if (!isWorkEditor && /^\[.*lyrics.*\]/i.test(text)) continue;
-
       out.push({ id: String(opt.value), text });
     }
     return out;
   }
 
-  // Build buttons from a list of preferred IDs; labels come from current UI
+  function btnStyle(bg, border, color = 'inherit') {
+    return {
+      padding: '6px 12px', border: `1px solid ${border}`, borderRadius: '4px',
+      backgroundColor: bg, color, cursor: 'pointer'
+    };
+  }
+
   function createButtonsFromIDs(selectEl, preferredIDs) {
     return preferredIDs
       .map(id => {
@@ -73,94 +71,7 @@
       .filter(Boolean);
   }
 
-  // Settings dialog that shows current locale labels but stores IDs
-  function showSettingsDialog({ type, options, selectedIDs, onSave }) {
-    const dialog = document.createElement('div');
-    Object.assign(dialog.style, {
-      position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-      zIndex: 10000, backgroundColor: 'white', padding: '20px', borderRadius: '8px',
-      boxShadow: '0 4px 8px rgba(0,0,0,0.2)', width: '420px', maxHeight: '80vh', overflowY: 'auto',
-      fontFamily: 'inherit'
-    });
-
-    const header = document.createElement('h3');
-    header.textContent = type === 'language' ? 'Customize Language Buttons' : 'Customize Script Buttons';
-    header.style.marginTop = '0';
-    dialog.appendChild(header);
-
-    const p = document.createElement('p');
-    p.textContent = `Select which ${type}s you want to appear as quick buttons:`;
-    dialog.appendChild(p);
-
-    const list = document.createElement('div');
-    Object.assign(list.style, { maxHeight: '300px', overflowY: 'auto', border: '1px solid #eee', padding: '10px', marginBottom: '15px' });
-
-    const sorted = [...options].sort((a, b) => a.text.localeCompare(b.text, undefined, { sensitivity: 'base' }));
-    for (const opt of sorted) {
-      const label = document.createElement('label');
-      label.style.display = 'block';
-      label.style.marginBottom = '6px';
-
-      const cb = document.createElement('input');
-      cb.type = 'checkbox';
-      cb.value = opt.id;
-      cb.checked = selectedIDs.includes(String(opt.id));
-      cb.style.marginRight = '6px';
-
-      label.appendChild(cb);
-      label.appendChild(document.createTextNode(opt.text));
-      list.appendChild(label);
-    }
-    dialog.appendChild(list);
-
-    const actions = document.createElement('div');
-    Object.assign(actions.style, { display: 'flex', justifyContent: 'space-between' });
-
-    const cancel = document.createElement('button');
-    cancel.textContent = 'Cancel';
-    Object.assign(cancel.style, btnStyle('#f8f8f8', '#ccc'));
-
-    const save = document.createElement('button');
-    save.textContent = 'Save';
-    Object.assign(save.style, btnStyle('#4CAF50', '#4CAF50', 'white'));
-
-    actions.appendChild(cancel);
-    actions.appendChild(save);
-    dialog.appendChild(actions);
-
-    const overlay = document.createElement('div');
-    Object.assign(overlay.style, {
-      position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 9999
-    });
-
-    document.body.appendChild(overlay);
-    document.body.appendChild(dialog);
-
-    cancel.addEventListener('click', () => {
-      document.body.removeChild(dialog);
-      document.body.removeChild(overlay);
-    });
-
-    save.addEventListener('click', () => {
-      const ids = Array.from(list.querySelectorAll('input[type=checkbox]'))
-        .filter(cb => cb.checked)
-        .map(cb => String(cb.value));
-      onSave(ids);
-      document.body.removeChild(dialog);
-      document.body.removeChild(overlay);
-      location.reload();
-    });
-  }
-
-  function btnStyle(bg, border, color = 'inherit') {
-    return {
-      padding: '6px 12px', border: `1px solid ${border}`, borderRadius: '4px',
-      backgroundColor: bg, color, cursor: 'pointer'
-    };
-  }
-
-  // Add buttons + settings gear after a <select>
-  function addButtonsAfter(selectEl, buttons, { isMulti = false, onOpenSettings }) {
+  function addButtonsAfter(selectEl, buttons, { onOpenSettings }) {
     const wrap = document.createElement('div');
     Object.assign(wrap.style, { display: 'inline-block', marginLeft: '15px', marginTop: '5px' });
 
@@ -191,27 +102,88 @@
     selectEl.parentNode.insertBefore(wrap, selectEl.nextSibling);
   }
 
-  // ---- Preferences (store IDs) ----
+  function showSettingsDialog({ type, options, selectedIDs, onSave }) {
+    const dialog = document.createElement('div');
+    Object.assign(dialog.style, {
+      position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+      zIndex: 10000, backgroundColor: 'white', padding: '20px', borderRadius: '8px',
+      boxShadow: '0 4px 8px rgba(0,0,0,0.2)', width: '420px', maxHeight: '80vh', overflowY: 'auto',
+      fontFamily: 'inherit'
+    });
 
-  // Defaults by ID (change to whatever you use most)
-  // Hebrew (language) and Yiddish are commonly: 486? (No lyrics) is special for Work editor; we do NOT include it here.
-  // You can leave empty arrays and pick via the gear icon.
-  const DEFAULT_LANGUAGE_IDS = []; // e.g., ['486'] for [No lyrics] in Work editor, but leave empty by default
-  const DEFAULT_SCRIPT_IDS = [];   // e.g., ['125' for Hebr] depends on your DB; safer to choose from the UI with the gear
+    const header = document.createElement('h3');
+    header.textContent = type === 'language' ? 'Customize Language Buttons' : 'Customize Script Buttons';
+    header.style.marginTop = '0';
+    dialog.appendChild(header);
 
-  // Load stored IDs
+    const p = document.createElement('p');
+    p.textContent = `Select which ${type}s you want to appear as quick buttons:`;
+    dialog.appendChild(p);
+
+    const list = document.createElement('div');
+    Object.assign(list.style, { maxHeight: '300px', overflowY: 'auto', border: '1px solid #eee', padding: '10px', marginBottom: '15px' });
+
+    const sorted = [...options].sort((a, b) => a.text.localeCompare(b.text, undefined, { sensitivity: 'base' }));
+    for (const opt of sorted) {
+      const label = document.createElement('label');
+      label.style.display = 'block';
+      label.style.marginBottom = '6px';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.value = opt.id;
+      cb.checked = selectedIDs.includes(String(opt.id));
+      cb.style.marginRight = '6px';
+      label.appendChild(cb);
+      label.appendChild(document.createTextNode(opt.text));
+      list.appendChild(label);
+    }
+    dialog.appendChild(list);
+
+    const actions = document.createElement('div');
+    Object.assign(actions.style, { display: 'flex', justifyContent: 'space-between' });
+
+    const cancel = document.createElement('button');
+    cancel.textContent = 'Cancel';
+    Object.assign(cancel.style, btnStyle('#f8f8f8', '#ccc'));
+
+    const save = document.createElement('button');
+    save.textContent = 'Save';
+    Object.assign(save.style, btnStyle('#4CAF50', '#4CAF50', 'white'));
+
+    actions.appendChild(cancel);
+    actions.appendChild(save);
+    dialog.appendChild(actions);
+
+    const overlay = document.createElement('div');
+    Object.assign(overlay.style, { position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 9999 });
+    document.body.appendChild(overlay);
+    document.body.appendChild(dialog);
+
+    cancel.addEventListener('click', () => { document.body.removeChild(dialog); document.body.removeChild(overlay); });
+    save.addEventListener('click', () => {
+      const ids = Array.from(list.querySelectorAll('input[type=checkbox]'))
+        .filter(cb => cb.checked)
+        .map(cb => String(cb.value));
+      onSave(ids);
+      document.body.removeChild(dialog);
+      document.body.removeChild(overlay);
+      location.reload();
+    });
+  }
+
+  // ---------- Preferences (store by ID) ----------
+
+  const DEFAULT_LANGUAGE_IDS = [];
+  const DEFAULT_SCRIPT_IDS = [];
+
   let preferredLanguageIDs = (GM_getValue('mbLanguageIDs') || DEFAULT_LANGUAGE_IDS).map(String);
   let preferredScriptIDs = (GM_getValue('mbScriptIDs') || DEFAULT_SCRIPT_IDS).map(String);
 
-  // Back-compat migration from name-based storage -> IDs
   function migrateNamesToIDsIfNeeded() {
-    const legacyLangNames = GM_getValue('mbLanguages'); // old: array of names
-    const legacyScriptNames = GM_getValue('mbScripts'); // old: array of names
-    const isWorkEditor = location.href.includes('/work/');
-
-    // Try mapping only when we can see the selects
+    const legacyLangNames = GM_getValue('mbLanguages');
+    const legacyScriptNames = GM_getValue('mbScripts');
     const languageSelect = document.getElementById('language') ||
-                           document.querySelector('.select-list-row select'); // first row in Work editor
+                           document.querySelector('.select-list-row select');
     const scriptSelect = document.getElementById('script');
 
     if (Array.isArray(legacyLangNames) && languageSelect) {
@@ -223,7 +195,7 @@
         preferredLanguageIDs = ids;
         GM_setValue('mbLanguageIDs', ids);
       }
-      GM_setValue('mbLanguages', null); // clear legacy
+      GM_setValue('mbLanguages', null);
     }
 
     if (Array.isArray(legacyScriptNames) && scriptSelect) {
@@ -235,13 +207,12 @@
         preferredScriptIDs = ids;
         GM_setValue('mbScriptIDs', ids);
       }
-      GM_setValue('mbScripts', null); // clear legacy
+      GM_setValue('mbScripts', null);
     }
   }
 
-  // ---- Work Editor helpers for “[No lyrics]” ----
+  // ---------- Work Editor one-click logic ----------
 
-  // Try to derive the [No lyrics] option ID dynamically; fallback to 486 if present
   function getNoLyricsID() {
     const firstSelect = document.querySelector('.select-list-row select');
     if (!firstSelect) return '486';
@@ -255,29 +226,71 @@
     const firstSelect = document.querySelector('.select-list-row select');
     if (!firstSelect) return;
     if (String(firstSelect.value) === String(noLyricsId)) {
-      const addBtn = document.getElementById('add-language');
-      if (addBtn) addBtn.style.display = 'none';
-      const rows = document.querySelectorAll('.select-list-row');
-      rows.forEach((row, i) => { if (i > 0) row.style.display = 'none'; });
+      document.getElementById('add-language')?.style && (document.getElementById('add-language').style.display = 'none');
+      document.querySelectorAll('.select-list-row').forEach((row, i) => { if (i > 0) row.style.display = 'none'; });
     } else {
-      const addBtn = document.getElementById('add-language');
-      if (addBtn) addBtn.style.display = '';
-      const rows = document.querySelectorAll('.select-list-row');
-      rows.forEach(row => (row.style.display = ''));
+      document.getElementById('add-language')?.style && (document.getElementById('add-language').style.display = '');
+      document.querySelectorAll('.select-list-row').forEach(row => (row.style.display = ''));
     }
+  }
+
+  function ensureEmptyLanguageSelect() {
+    return new Promise(resolve => {
+      const selects = Array.from(document.querySelectorAll('.select-list-row select'));
+      const empty = selects.find(s => !s.value);
+      if (empty) return resolve(empty);
+
+      const container = document.querySelector('.form-row-select-list');
+      if (!container) return resolve(null);
+
+      const beforeCount = selects.length;
+      const obs = new MutationObserver(() => {
+        const now = Array.from(document.querySelectorAll('.select-list-row select'));
+        if (now.length > beforeCount) {
+          obs.disconnect();
+          resolve(now[now.length - 1]);
+        }
+      });
+      obs.observe(container, { childList: true, subtree: true });
+
+      const addBtn = document.getElementById('add-language');
+      if (addBtn) {
+        addBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+        setTimeout(() => {
+          const now = Array.from(document.querySelectorAll('.select-list-row select'));
+          if (now.length > beforeCount) {
+            obs.disconnect();
+            resolve(now[now.length - 1]);
+          }
+        }, 300);
+      } else {
+        resolve(null);
+      }
+    });
+  }
+
+  async function setWorkLanguageSingleClick(id, noLyricsId) {
+    const firstSelect = document.querySelector('.select-list-row select');
+    if (!firstSelect) return;
+    if (String(firstSelect.value) === String(noLyricsId)) {
+      forceValue(firstSelect, id);
+      setTimeout(() => updateWorkEditorLanguageUI(noLyricsId), 50);
+      return;
+    }
+    const already = Array.from(document.querySelectorAll('.select-list-row select'))
+      .some(s => String(s.value) === String(id));
+    if (already) return;
+    const targetSelect = await ensureEmptyLanguageSelect();
+    if (targetSelect) forceValue(targetSelect, id);
   }
 
   function addWorkEditorLanguageButtons(preferredIDs) {
     const container = document.querySelector('.form-row-select-list');
     if (!container) return;
-
-    // Where to read options from
     const firstSelect = document.querySelector('.select-list-row select');
     if (!firstSelect) return;
-
     const noLyricsId = getNoLyricsID();
 
-    // Build UI
     const quick = document.createElement('div');
     Object.assign(quick.style, { margin: '10px 0', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px' });
 
@@ -287,59 +300,19 @@
     label.style.marginRight = '8px';
     quick.appendChild(label);
 
-    // One button per preferred ID
     preferredIDs.forEach(id => {
-      const opt = getOption(firstSelect, id);
+      const opt = Array.from(firstSelect.options).find(o => String(o.value) === String(id));
       if (!opt) return;
       const btn = document.createElement('button');
       btn.type = 'button';
-      btn.textContent = opt.text;
+      btn.textContent = opt.text.trim();
       Object.assign(btn.style, {
         padding: '4px 12px', backgroundColor: '#eee', border: '1px solid #ccc', borderRadius: '4px', cursor: 'pointer'
       });
-      btn.addEventListener('click', e => {
-        e.preventDefault();
-        if (String(id) === String(noLyricsId)) {
-          // Clear all but first
-          const rows = document.querySelectorAll('.select-list-row');
-          for (let i = 1; i < rows.length; i++) {
-            rows[i].querySelector('button.remove-item')?.click();
-          }
-          forceValue(firstSelect, id);
-          setTimeout(() => updateWorkEditorLanguageUI(noLyricsId), 100);
-        } else {
-          if (String(firstSelect.value) === String(noLyricsId)) {
-            forceValue(firstSelect, id);
-            setTimeout(() => updateWorkEditorLanguageUI(noLyricsId), 100);
-          } else {
-            // Use an empty select if available; otherwise click "Add language" then set
-            const selects = Array.from(document.querySelectorAll('.select-list-row select'));
-            let empty = selects.find(s => !s.value);
-            if (!empty) {
-              const addBtn = document.getElementById('add-language');
-              if (addBtn) {
-                const original = addBtn.onclick;
-                addBtn.onclick = function (ev) {
-                  original?.call(this, ev);
-                  setTimeout(() => {
-                    const newSelect = document.querySelector('.select-list-row:last-child select');
-                    if (newSelect) forceValue(newSelect, id);
-                    addBtn.onclick = original;
-                  }, 50);
-                };
-                addBtn.click();
-              }
-            } else {
-              forceValue(empty, id);
-            }
-          }
-        }
-        return false;
-      });
+      btn.addEventListener('click', async e => { e.preventDefault(); await setWorkLanguageSingleClick(String(id), noLyricsId); return false; });
       quick.appendChild(btn);
     });
 
-    // Settings gear
     const gear = document.createElement('button');
     gear.type = 'button';
     gear.textContent = '⚙️';
@@ -359,23 +332,19 @@
     });
     quick.appendChild(gear);
 
-    // Insert after the list
     container.parentElement.insertBefore(quick, container.nextSibling);
 
-    // Observe changes to the first select and update UI
     const obs = new MutationObserver(() => updateWorkEditorLanguageUI(noLyricsId));
     obs.observe(firstSelect, { attributes: true, attributeFilter: ['value'] });
     updateWorkEditorLanguageUI(noLyricsId);
   }
 
-  // -------- Main --------
+  // ---------- Main ----------
+
   window.addEventListener('load', function () {
     const isWorkEditor = location.href.includes('/work/');
-
-    // Migrate old name-based prefs to IDs if present
     migrateNamesToIDsIfNeeded();
 
-    // Release editor: Language
     const languageSelect = document.getElementById('language');
     if (languageSelect) {
       const buttons = createButtonsFromIDs(languageSelect, preferredLanguageIDs);
@@ -392,7 +361,6 @@
       });
     }
 
-    // Release editor: Script
     const scriptSelect = document.getElementById('script');
     if (scriptSelect) {
       const buttons = createButtonsFromIDs(scriptSelect, preferredScriptIDs);
@@ -409,9 +377,6 @@
       });
     }
 
-    // Work editor (lyrics languages list)
-    if (isWorkEditor) {
-      setTimeout(() => addWorkEditorLanguageButtons(preferredLanguageIDs), 500);
-    }
+    if (isWorkEditor) setTimeout(() => addWorkEditorLanguageButtons(preferredLanguageIDs), 500);
   });
 })();
