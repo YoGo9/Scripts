@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz Customizable Language Selector
 // @namespace    https://github.com/YoGo9/Scripts
-// @version      1.3
+// @version      1.4
 // @description  Add customizable quick-select buttons for languages in MusicBrainz release editor and work editor
 // @author       YoGo9
 // @homepage     https://github.com/YoGo9/Scripts
@@ -21,557 +21,397 @@
 // @license      MIT
 // ==/UserScript==
 
-(function() {
-    'use strict';
-    
-    // Default settings - modify these for your preferred languages
-    const DEFAULT_LANGUAGES = ['Hebrew', 'Yiddish'];
-    const DEFAULT_SCRIPTS = ['Hebrew'];
-    
-    // Load user settings or use defaults
-    let preferredLanguages = GM_getValue('mbLanguages', DEFAULT_LANGUAGES);
-    let preferredScripts = GM_getValue('mbScripts', DEFAULT_SCRIPTS);
-    
-    // Function to properly set value in React components
-    function forceValue(input, value) {
-        // Force react state change by bubbling up the input event
-        input.dispatchEvent(new Event("input", {bubbles: true}));
-        // Use native input value setter to bypass React (simple value setter is overridden by react)
-        (Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input), "value").set).call(input, value);
-        // Trigger change event to update React state
-        input.dispatchEvent(new Event("change", {bubbles: true}));
+(function () {
+  'use strict';
+
+  // -------- Helpers --------
+
+  // Force React-controlled <select> to a value
+  function forceValue(input, value) {
+    const proto = Object.getPrototypeOf(input);
+    const valueSetter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    valueSetter?.call(input, String(value));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  // Get option by id (value) and as a small object
+  function getOption(selectEl, id) {
+    const opt = Array.from(selectEl.options).find(o => String(o.value) === String(id));
+    return opt ? { id: String(opt.value), text: opt.text.trim() } : null;
+  }
+
+  // Get all usable options (id + text); allows filtering per editor
+  function getAvailableOptions(selectEl, { isWorkEditor }) {
+    const out = [];
+    for (const opt of selectEl.options) {
+      const text = opt.text?.trim();
+      if (!text || text === '—' || text === '⠀' || text.startsWith('Frequently used')) continue;
+
+      // Original behavior: in Work Editor skip "[Multiple languages]"
+      if (isWorkEditor && /^\[.*multiple.*\]/i.test(text)) continue;
+
+      // In Release Editor skip "[No lyrics]"
+      if (!isWorkEditor && /^\[.*lyrics.*\]/i.test(text)) continue;
+
+      out.push({ id: String(opt.value), text });
     }
-    
-    // Function to find the correct option value by text
-    function findOptionValueByText(selectElement, text) {
-        for (let i = 0; i < selectElement.options.length; i++) {
-            if (selectElement.options[i].text.trim() === text) {
-                return selectElement.options[i].value;
-            }
-        }
-        return null;
-    }
-    
-    // Function to get all available options from a select element
-    function getAvailableOptions(selectElement) {
-        const options = [];
-        
-        // First check if this is the work editor or release editor
-        const isWorkEditor = window.location.href.includes('/work/');
-        
-        for (let i = 0; i < selectElement.options.length; i++) {
-            const optionText = selectElement.options[i].text.trim();
-            if (optionText && optionText !== '—' && optionText !== '⠀' && 
-                !optionText.startsWith('Frequently used')) {
-                // In work editor we want to include [No lyrics] but not in release editor
-                // In release editor we want to include [Multiple languages] but not in work editor
-                if (isWorkEditor && optionText === '[Multiple languages]') {
-                    continue; // Skip [Multiple languages] in work editor
-                }
-                if (!isWorkEditor && optionText === '[No lyrics]') {
-                    continue; // Skip [No lyrics] in release editor
-                }
-                options.push(optionText);
-            }
-        }
-        return options;
-    }
-    
-    // Function to add buttons after a specified element
-    function addButtonsAfter(element, buttons, isMultiSelect = false) {
-        const buttonContainer = document.createElement('div');
-        buttonContainer.style.display = 'inline-block';
-        buttonContainer.style.marginLeft = '15px';
-        buttonContainer.style.marginTop = '5px';
-        
-        buttons.forEach(button => {
-            const btn = document.createElement('button');
-            btn.textContent = button.text;
-            btn.type = 'button'; // Prevent form submission
-            
-            // Apply nice styling to the buttons
-            btn.style.marginRight = '10px';
-            btn.style.padding = '4px 12px';
-            btn.style.backgroundColor = '#eee';
-            btn.style.border = '1px solid #ccc';
-            btn.style.borderRadius = '4px';
-            btn.style.fontFamily = 'inherit';
-            btn.style.fontSize = '13px';
-            btn.style.cursor = 'pointer';
-            btn.style.transition = 'all 0.2s ease';
-            
-            // Hover effect
-            btn.addEventListener('mouseover', function() {
-                btn.style.backgroundColor = '#ddd';
-                btn.style.borderColor = '#bbb';
-            });
-            
-            btn.addEventListener('mouseout', function() {
-                btn.style.backgroundColor = '#eee';
-                btn.style.borderColor = '#ccc';
-            });
-            
-            // Active effect
-            btn.addEventListener('mousedown', function() {
-                btn.style.backgroundColor = '#ccc';
-                btn.style.transform = 'translateY(1px)';
-            });
-            
-            btn.addEventListener('mouseup', function() {
-                btn.style.backgroundColor = '#ddd';
-                btn.style.transform = 'translateY(0)';
-            });
-            
-            // Use different click handlers for multi-select vs. single-select
-            if (isMultiSelect) {
-                btn.addEventListener('click', function(e) {
-                    e.preventDefault(); // Prevent any form submission
-                    button.onClick(e);
-                    return false;
-                });
-            } else {
-                btn.addEventListener('click', function(e) {
-                    e.preventDefault(); // Prevent any form submission
-                    button.onClick(e);
-                    return false;
-                });
-            }
-            
-            buttonContainer.appendChild(btn);
-        });
-        
-        // Add settings button
-        const settingsBtn = document.createElement('button');
-        settingsBtn.textContent = '⚙️';
-        settingsBtn.title = 'Settings';
-        settingsBtn.type = 'button'; // Prevent form submission
-        settingsBtn.style.marginLeft = '5px';
-        settingsBtn.style.padding = '4px 8px';
-        settingsBtn.style.backgroundColor = '#f8f8f8';
-        settingsBtn.style.border = '1px solid #ddd';
-        settingsBtn.style.borderRadius = '4px';
-        settingsBtn.style.cursor = 'pointer';
-        
-        settingsBtn.addEventListener('click', function(e) {
-            e.preventDefault(); // Prevent any form submission
-            // Determine which type of selector this is
-            let type = 'language';
-            if (element.id === 'script') {
-                type = 'script';
-            }
-            showSettingsDialog(type, getAvailableOptions(element), type === 'language' ? preferredLanguages : preferredScripts);
-            return false;
-        });
-        
-        buttonContainer.appendChild(settingsBtn);
-        element.parentNode.insertBefore(buttonContainer, element.nextSibling);
-    }
-    
-    // Function to show settings dialog
-    function showSettingsDialog(type, availableOptions, selectedOptions) {
-        // Create and style the dialog
-        const dialog = document.createElement('div');
-        dialog.style.position = 'fixed';
-        dialog.style.top = '50%';
-        dialog.style.left = '50%';
-        dialog.style.transform = 'translate(-50%, -50%)';
-        dialog.style.zIndex = '10000';
-        dialog.style.backgroundColor = 'white';
-        dialog.style.padding = '20px';
-        dialog.style.borderRadius = '8px';
-        dialog.style.boxShadow = '0 4px 8px rgba(0,0,0,0.2)';
-        dialog.style.width = '400px';
-        dialog.style.maxHeight = '80vh';
-        dialog.style.overflowY = 'auto';
-        
-        // Create a header
-        const header = document.createElement('h3');
-        header.textContent = type === 'language' ? 'Customize Language Buttons' : 'Customize Script Buttons';
-        header.style.marginTop = '0';
-        header.style.marginBottom = '15px';
-        dialog.appendChild(header);
-        
-        // Create description
-        const description = document.createElement('p');
-        description.textContent = `Select which ${type}s you want to appear as quick buttons:`;
-        dialog.appendChild(description);
-        
-        // Create the options list
-        const optionsContainer = document.createElement('div');
-        optionsContainer.style.maxHeight = '300px';
-        optionsContainer.style.overflowY = 'auto';
-        optionsContainer.style.border = '1px solid #eee';
-        optionsContainer.style.padding = '10px';
-        optionsContainer.style.marginBottom = '15px';
-        
-        // Sort options alphabetically
-        availableOptions.sort();
-        
-        // Create checkboxes for all available options
-        availableOptions.forEach(option => {
-            const optionLabel = document.createElement('label');
-            optionLabel.style.display = 'block';
-            optionLabel.style.marginBottom = '5px';
-            
-            const checkbox = document.createElement('input');
-            checkbox.type = 'checkbox';
-            checkbox.value = option;
-            checkbox.checked = selectedOptions.includes(option);
-            checkbox.style.marginRight = '5px';
-            
-            optionLabel.appendChild(checkbox);
-            optionLabel.appendChild(document.createTextNode(option));
-            optionsContainer.appendChild(optionLabel);
-        });
-        
-        dialog.appendChild(optionsContainer);
-        
-        // Create buttons
-        const buttonContainer = document.createElement('div');
-        buttonContainer.style.display = 'flex';
-        buttonContainer.style.justifyContent = 'space-between';
-        
-        const cancelButton = document.createElement('button');
-        cancelButton.textContent = 'Cancel';
-        cancelButton.style.padding = '6px 12px';
-        cancelButton.style.border = '1px solid #ccc';
-        cancelButton.style.borderRadius = '4px';
-        cancelButton.style.backgroundColor = '#f8f8f8';
-        cancelButton.style.cursor = 'pointer';
-        
-        const saveButton = document.createElement('button');
-        saveButton.textContent = 'Save';
-        saveButton.style.padding = '6px 12px';
-        saveButton.style.border = '1px solid #4CAF50';
-        saveButton.style.borderRadius = '4px';
-        saveButton.style.backgroundColor = '#4CAF50';
-        saveButton.style.color = 'white';
-        saveButton.style.cursor = 'pointer';
-        
-        buttonContainer.appendChild(cancelButton);
-        buttonContainer.appendChild(saveButton);
-        dialog.appendChild(buttonContainer);
-        
-        // Create overlay
-        const overlay = document.createElement('div');
-        overlay.style.position = 'fixed';
-        overlay.style.top = '0';
-        overlay.style.left = '0';
-        overlay.style.width = '100%';
-        overlay.style.height = '100%';
-        overlay.style.backgroundColor = 'rgba(0,0,0,0.5)';
-        overlay.style.zIndex = '9999';
-        
-        // Add to document
-        document.body.appendChild(overlay);
-        document.body.appendChild(dialog);
-        
-        // Handle cancel
-        cancelButton.addEventListener('click', function() {
-            document.body.removeChild(overlay);
-            document.body.removeChild(dialog);
-        });
-        
-        // Handle save
-        saveButton.addEventListener('click', function() {
-            const newSelection = [];
-            const checkboxes = optionsContainer.querySelectorAll('input[type="checkbox"]');
-            checkboxes.forEach(checkbox => {
-                if (checkbox.checked) {
-                    newSelection.push(checkbox.value);
-                }
-            });
-            
-            if (type === 'language') {
-                preferredLanguages = newSelection;
-                GM_setValue('mbLanguages', newSelection);
-            } else if (type === 'script') {
-                preferredScripts = newSelection;
-                GM_setValue('mbScripts', newSelection);
-            }
-            
-            document.body.removeChild(overlay);
-            document.body.removeChild(dialog);
-            
-            // Reload the page to apply changes
-            location.reload();
-        });
-    }
-    
-    // Function to create button objects from preferred options for single-select elements
-    function createButtonsFromPreferences(selectElement, preferredOptions) {
-        return preferredOptions.map(option => {
-            // Skip options that don't exist in this context
-            if (!findOptionValueByText(selectElement, option)) {
-                return null;
-            }
-            
-            return {
-                text: option,
-                onClick: function(e) {
-                    e.preventDefault();
-                    const value = findOptionValueByText(selectElement, option);
-                    if (value) {
-                        forceValue(selectElement, value);
-                    } else {
-                        alert(`${option} option not found in the dropdown`);
-                    }
-                    return false;
-                }
-            };
-        }).filter(button => button !== null); // Remove null entries
-    }
-    
-    // Function for updating the work editor language UI
-    function updateWorkEditorLanguageUI() {
-        // Check if "[No lyrics]" is selected
-        const firstLanguageSelect = document.querySelector('.select-list-row select');
-        if (firstLanguageSelect && firstLanguageSelect.value === '486') {
-            // If "[No lyrics]" is selected, hide the "Add language" button
-            const addLanguageButton = document.getElementById('add-language');
-            if (addLanguageButton) {
-                addLanguageButton.style.display = 'none';
-            }
-            
-            // Also hide any existing language rows except the first one
-            const languageRows = document.querySelectorAll('.select-list-row');
-            for (let i = 1; i < languageRows.length; i++) {
-                languageRows[i].style.display = 'none';
-            }
-        } else {
-            // Make sure the "Add language" button is visible
-            const addLanguageButton = document.getElementById('add-language');
-            if (addLanguageButton) {
-                addLanguageButton.style.display = '';
-            }
-            
-            // Show all language rows
-            const languageRows = document.querySelectorAll('.select-list-row');
-            for (let i = 0; i < languageRows.length; i++) {
-                languageRows[i].style.display = '';
-            }
-        }
-    }
-    
-    // Function to add work editor language buttons
-    function addWorkEditorLanguageButtons() {
-        // Check if the language rows container exists
-        const languageRowsContainer = document.querySelector('.form-row-select-list');
-        if (!languageRowsContainer) return;
-        
-        // Create a container div for the quick add buttons
-        const quickAddContainer = document.createElement('div');
-        quickAddContainer.style.margin = '10px 0';
-        quickAddContainer.style.display = 'flex';
-        quickAddContainer.style.alignItems = 'center';
-        
-        // Add a label
-        const quickAddLabel = document.createElement('div');
-        quickAddLabel.textContent = 'Quick add:';
-        quickAddLabel.style.marginRight = '10px';
-        quickAddLabel.style.fontWeight = 'bold';
-        quickAddContainer.appendChild(quickAddLabel);
-        
-        // Create button container
-        const buttonsDiv = document.createElement('div');
-        buttonsDiv.style.display = 'flex';
-        buttonsDiv.style.flexWrap = 'wrap';
-        quickAddContainer.appendChild(buttonsDiv);
-        
-        // Get the first language select for option lookup
-        const firstLanguageSelect = document.querySelector('.select-list-row select');
-        if (!firstLanguageSelect) return;
-        
-        // Add buttons for each preferred language
-        preferredLanguages.forEach(language => {
-            const btn = document.createElement('button');
-            btn.textContent = language;
-            btn.type = 'button';
-            
-            // Style the button
-            btn.style.margin = '0 5px 5px 0';
-            btn.style.padding = '4px 12px';
-            btn.style.backgroundColor = '#eee';
-            btn.style.border = '1px solid #ccc';
-            btn.style.borderRadius = '4px';
-            btn.style.cursor = 'pointer';
-            
-            // Get the language value
-            const value = findOptionValueByText(firstLanguageSelect, language);
-            if (!value) {
-                // Skip this language if it doesn't exist in the dropdown
-                return;
-            }
-            
-            // Add click handler
-            btn.addEventListener('click', function(e) {
-                e.preventDefault();
-                
-                if (language === '[No lyrics]') {
-                    // Special handling for "[No lyrics]" option
-                    // Clear all languages first
-                    const languageRows = document.querySelectorAll('.select-list-row');
-                    for (let i = 1; i < languageRows.length; i++) {
-                        // Click the remove button for all rows except the first
-                        const removeButton = languageRows[i].querySelector('button.remove-item');
-                        if (removeButton) {
-                            removeButton.click();
-                        }
-                    }
-                    
-                    // Set the first dropdown to "[No lyrics]"
-                    forceValue(firstLanguageSelect, value);
-                    
-                    // Update UI to hide the "Add language" button
-                    setTimeout(updateWorkEditorLanguageUI, 100);
-                } else {
-                    // For normal languages
-                    
-                    // Check if "[No lyrics]" is currently selected
-                    if (firstLanguageSelect.value === '486') {
-                        // If "[No lyrics]" is selected, replace it with the new language
-                        forceValue(firstLanguageSelect, value);
-                        setTimeout(updateWorkEditorLanguageUI, 100);
-                    } else {
-                        // Regular language handling - find or create an empty dropdown
-                        let emptySelect = null;
-                        const selects = document.querySelectorAll('.select-list-row select');
-                        
-                        // Look for an empty select
-                        for (let i = 0; i < selects.length; i++) {
-                            if (!selects[i].value || selects[i].value === "") {
-                                emptySelect = selects[i];
-                                break;
-                            }
-                        }
-                        
-                        if (!emptySelect) {
-                            // If no empty select found, click the "Add language" button to add a new row
-                            // and immediately set the value (to avoid the two-step click)
-                            const addLanguageButton = document.getElementById('add-language');
-                            if (addLanguageButton) {
-                                // Temporarily store the original click handler
-                                const originalClick = addLanguageButton.onclick;
-                                
-                                // Override the click handler to add our custom logic
-                                addLanguageButton.onclick = function(e) {
-                                    // Call the original handler to add the row
-                                    if (originalClick) {
-                                        originalClick.call(this, e);
-                                    }
-                                    
-                                    // Wait a short time for the row to be added
-                                    setTimeout(() => {
-                                        // Find the newly added row
-                                        const newSelect = document.querySelector('.select-list-row:last-child select');
-                                        if (newSelect) {
-                                            // Set the value of the new select
-                                            forceValue(newSelect, value);
-                                        }
-                                        
-                                        // Restore the original click handler
-                                        addLanguageButton.onclick = originalClick;
-                                    }, 50);
-                                };
-                                
-                                // Trigger the click to add a new row
-                                addLanguageButton.click();
-                            }
-                        } else {
-                            // Use the empty select
-                            forceValue(emptySelect, value);
-                        }
-                    }
-                }
-                
-                return false;
-            });
-            
-            buttonsDiv.appendChild(btn);
-        });
-        
-        // Add settings button
-        const settingsBtn = document.createElement('button');
-        settingsBtn.textContent = '⚙️';
-        settingsBtn.title = 'Settings';
-        settingsBtn.type = 'button';
-        settingsBtn.style.margin = '0 5px 5px 0';
-        settingsBtn.style.padding = '4px 8px';
-        settingsBtn.style.backgroundColor = '#f8f8f8';
-        settingsBtn.style.border = '1px solid #ddd';
-        settingsBtn.style.borderRadius = '4px';
-        settingsBtn.style.cursor = 'pointer';
-        
-        settingsBtn.addEventListener('click', function(e) {
-            e.preventDefault();
-            showSettingsDialog('language', getAvailableOptions(firstLanguageSelect), preferredLanguages);
-            return false;
-        });
-        
-        buttonsDiv.appendChild(settingsBtn);
-        
-        // Find where to insert the quick add container
-        let lyricsLanguagesLabel = null;
-        const labels = document.querySelectorAll('label');
-        for (let i = 0; i < labels.length; i++) {
-            if (labels[i].textContent.includes('Lyrics languages')) {
-                lyricsLanguagesLabel = labels[i];
-                break;
-            }
-        }
-        
-        if (lyricsLanguagesLabel) {
-            // Insert after the label's parent
-            const parentElement = lyricsLanguagesLabel.parentElement;
-            if (parentElement && parentElement.parentElement) {
-                parentElement.parentElement.insertBefore(quickAddContainer, languageRowsContainer.nextSibling);
-            } else {
-                // Fallback insertion
-                languageRowsContainer.parentElement.insertBefore(quickAddContainer, languageRowsContainer.nextSibling);
-            }
-        } else {
-            // Fallback - insert after the language rows container
-            languageRowsContainer.parentElement.insertBefore(quickAddContainer, languageRowsContainer.nextSibling);
-        }
-        
-        // Set up observers to watch for language changes
-        const firstLanguageSelectObserver = new MutationObserver(function(mutations) {
-            updateWorkEditorLanguageUI();
-        });
-        
-        // Observe changes to the first language select value
-        firstLanguageSelectObserver.observe(firstLanguageSelect, { 
-            attributes: true, 
-            attributeFilter: ['value'] 
-        });
-        
-        // Initial UI update
-        updateWorkEditorLanguageUI();
-    }
-    
-    // Wait for the page to fully load
-    window.addEventListener('load', function() {
-        // Check if we're on a work editor page or a release editor page
-        const isWorkEditor = window.location.href.includes('/work/');
-        
-        // Add buttons for language selection in release editor
-        const languageSelect = document.getElementById('language');
-        if (languageSelect) {
-            const languageButtons = createButtonsFromPreferences(languageSelect, preferredLanguages);
-            addButtonsAfter(languageSelect, languageButtons);
-        }
-        
-        // Add buttons for script selection in release editor
-        const scriptSelect = document.getElementById('script');
-        if (scriptSelect) {
-            const scriptButtons = createButtonsFromPreferences(scriptSelect, preferredScripts);
-            addButtonsAfter(scriptSelect, scriptButtons);
-        }
-        
-        // Add buttons for lyrics languages in work editor
-        if (isWorkEditor) {
-            // Add a slight delay to ensure React components are fully loaded
-            setTimeout(addWorkEditorLanguageButtons, 500);
-        }
+    return out;
+  }
+
+  // Build buttons from a list of preferred IDs; labels come from current UI
+  function createButtonsFromIDs(selectEl, preferredIDs) {
+    return preferredIDs
+      .map(id => {
+        const opt = getOption(selectEl, id);
+        if (!opt) return null;
+        return {
+          text: opt.text,
+          onClick: () => forceValue(selectEl, opt.id),
+        };
+      })
+      .filter(Boolean);
+  }
+
+  // Settings dialog that shows current locale labels but stores IDs
+  function showSettingsDialog({ type, options, selectedIDs, onSave }) {
+    const dialog = document.createElement('div');
+    Object.assign(dialog.style, {
+      position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+      zIndex: 10000, backgroundColor: 'white', padding: '20px', borderRadius: '8px',
+      boxShadow: '0 4px 8px rgba(0,0,0,0.2)', width: '420px', maxHeight: '80vh', overflowY: 'auto',
+      fontFamily: 'inherit'
     });
+
+    const header = document.createElement('h3');
+    header.textContent = type === 'language' ? 'Customize Language Buttons' : 'Customize Script Buttons';
+    header.style.marginTop = '0';
+    dialog.appendChild(header);
+
+    const p = document.createElement('p');
+    p.textContent = `Select which ${type}s you want to appear as quick buttons:`;
+    dialog.appendChild(p);
+
+    const list = document.createElement('div');
+    Object.assign(list.style, { maxHeight: '300px', overflowY: 'auto', border: '1px solid #eee', padding: '10px', marginBottom: '15px' });
+
+    const sorted = [...options].sort((a, b) => a.text.localeCompare(b.text, undefined, { sensitivity: 'base' }));
+    for (const opt of sorted) {
+      const label = document.createElement('label');
+      label.style.display = 'block';
+      label.style.marginBottom = '6px';
+
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.value = opt.id;
+      cb.checked = selectedIDs.includes(String(opt.id));
+      cb.style.marginRight = '6px';
+
+      label.appendChild(cb);
+      label.appendChild(document.createTextNode(opt.text));
+      list.appendChild(label);
+    }
+    dialog.appendChild(list);
+
+    const actions = document.createElement('div');
+    Object.assign(actions.style, { display: 'flex', justifyContent: 'space-between' });
+
+    const cancel = document.createElement('button');
+    cancel.textContent = 'Cancel';
+    Object.assign(cancel.style, btnStyle('#f8f8f8', '#ccc'));
+
+    const save = document.createElement('button');
+    save.textContent = 'Save';
+    Object.assign(save.style, btnStyle('#4CAF50', '#4CAF50', 'white'));
+
+    actions.appendChild(cancel);
+    actions.appendChild(save);
+    dialog.appendChild(actions);
+
+    const overlay = document.createElement('div');
+    Object.assign(overlay.style, {
+      position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 9999
+    });
+
+    document.body.appendChild(overlay);
+    document.body.appendChild(dialog);
+
+    cancel.addEventListener('click', () => {
+      document.body.removeChild(dialog);
+      document.body.removeChild(overlay);
+    });
+
+    save.addEventListener('click', () => {
+      const ids = Array.from(list.querySelectorAll('input[type=checkbox]'))
+        .filter(cb => cb.checked)
+        .map(cb => String(cb.value));
+      onSave(ids);
+      document.body.removeChild(dialog);
+      document.body.removeChild(overlay);
+      location.reload();
+    });
+  }
+
+  function btnStyle(bg, border, color = 'inherit') {
+    return {
+      padding: '6px 12px', border: `1px solid ${border}`, borderRadius: '4px',
+      backgroundColor: bg, color, cursor: 'pointer'
+    };
+  }
+
+  // Add buttons + settings gear after a <select>
+  function addButtonsAfter(selectEl, buttons, { isMulti = false, onOpenSettings }) {
+    const wrap = document.createElement('div');
+    Object.assign(wrap.style, { display: 'inline-block', marginLeft: '15px', marginTop: '5px' });
+
+    for (const b of buttons) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = b.text;
+      Object.assign(btn.style, {
+        marginRight: '10px', padding: '4px 12px', backgroundColor: '#eee',
+        border: '1px solid #ccc', borderRadius: '4px', fontFamily: 'inherit',
+        fontSize: '13px', cursor: 'pointer', transition: 'all .2s'
+      });
+      btn.addEventListener('click', e => { e.preventDefault(); b.onClick(); return false; });
+      wrap.appendChild(btn);
+    }
+
+    const gear = document.createElement('button');
+    gear.type = 'button';
+    gear.textContent = '⚙️';
+    gear.title = 'Settings';
+    Object.assign(gear.style, {
+      marginLeft: '5px', padding: '4px 8px', backgroundColor: '#f8f8f8',
+      border: '1px solid #ddd', borderRadius: '4px', cursor: 'pointer'
+    });
+    gear.addEventListener('click', e => { e.preventDefault(); onOpenSettings?.(); return false; });
+    wrap.appendChild(gear);
+
+    selectEl.parentNode.insertBefore(wrap, selectEl.nextSibling);
+  }
+
+  // ---- Preferences (store IDs) ----
+
+  // Defaults by ID (change to whatever you use most)
+  // Hebrew (language) and Yiddish are commonly: 486? (No lyrics) is special for Work editor; we do NOT include it here.
+  // You can leave empty arrays and pick via the gear icon.
+  const DEFAULT_LANGUAGE_IDS = []; // e.g., ['486'] for [No lyrics] in Work editor, but leave empty by default
+  const DEFAULT_SCRIPT_IDS = [];   // e.g., ['125' for Hebr] depends on your DB; safer to choose from the UI with the gear
+
+  // Load stored IDs
+  let preferredLanguageIDs = (GM_getValue('mbLanguageIDs') || DEFAULT_LANGUAGE_IDS).map(String);
+  let preferredScriptIDs = (GM_getValue('mbScriptIDs') || DEFAULT_SCRIPT_IDS).map(String);
+
+  // Back-compat migration from name-based storage -> IDs
+  function migrateNamesToIDsIfNeeded() {
+    const legacyLangNames = GM_getValue('mbLanguages'); // old: array of names
+    const legacyScriptNames = GM_getValue('mbScripts'); // old: array of names
+    const isWorkEditor = location.href.includes('/work/');
+
+    // Try mapping only when we can see the selects
+    const languageSelect = document.getElementById('language') ||
+                           document.querySelector('.select-list-row select'); // first row in Work editor
+    const scriptSelect = document.getElementById('script');
+
+    if (Array.isArray(legacyLangNames) && languageSelect) {
+      const ids = legacyLangNames.map(name => {
+        const opt = Array.from(languageSelect.options).find(o => o.text.trim() === name);
+        return opt ? String(opt.value) : null;
+      }).filter(Boolean);
+      if (ids.length) {
+        preferredLanguageIDs = ids;
+        GM_setValue('mbLanguageIDs', ids);
+      }
+      GM_setValue('mbLanguages', null); // clear legacy
+    }
+
+    if (Array.isArray(legacyScriptNames) && scriptSelect) {
+      const ids = legacyScriptNames.map(name => {
+        const opt = Array.from(scriptSelect.options).find(o => o.text.trim() === name);
+        return opt ? String(opt.value) : null;
+      }).filter(Boolean);
+      if (ids.length) {
+        preferredScriptIDs = ids;
+        GM_setValue('mbScriptIDs', ids);
+      }
+      GM_setValue('mbScripts', null); // clear legacy
+    }
+  }
+
+  // ---- Work Editor helpers for “[No lyrics]” ----
+
+  // Try to derive the [No lyrics] option ID dynamically; fallback to 486 if present
+  function getNoLyricsID() {
+    const firstSelect = document.querySelector('.select-list-row select');
+    if (!firstSelect) return '486';
+    const candidate =
+      Array.from(firstSelect.options).find(o => /^\[.*lyrics.*\]$/i.test(o.text.trim())) ||
+      Array.from(firstSelect.options).find(o => String(o.value) === '486');
+    return candidate ? String(candidate.value) : '486';
+  }
+
+  function updateWorkEditorLanguageUI(noLyricsId) {
+    const firstSelect = document.querySelector('.select-list-row select');
+    if (!firstSelect) return;
+    if (String(firstSelect.value) === String(noLyricsId)) {
+      const addBtn = document.getElementById('add-language');
+      if (addBtn) addBtn.style.display = 'none';
+      const rows = document.querySelectorAll('.select-list-row');
+      rows.forEach((row, i) => { if (i > 0) row.style.display = 'none'; });
+    } else {
+      const addBtn = document.getElementById('add-language');
+      if (addBtn) addBtn.style.display = '';
+      const rows = document.querySelectorAll('.select-list-row');
+      rows.forEach(row => (row.style.display = ''));
+    }
+  }
+
+  function addWorkEditorLanguageButtons(preferredIDs) {
+    const container = document.querySelector('.form-row-select-list');
+    if (!container) return;
+
+    // Where to read options from
+    const firstSelect = document.querySelector('.select-list-row select');
+    if (!firstSelect) return;
+
+    const noLyricsId = getNoLyricsID();
+
+    // Build UI
+    const quick = document.createElement('div');
+    Object.assign(quick.style, { margin: '10px 0', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px' });
+
+    const label = document.createElement('div');
+    label.textContent = 'Quick add:';
+    label.style.fontWeight = 'bold';
+    label.style.marginRight = '8px';
+    quick.appendChild(label);
+
+    // One button per preferred ID
+    preferredIDs.forEach(id => {
+      const opt = getOption(firstSelect, id);
+      if (!opt) return;
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = opt.text;
+      Object.assign(btn.style, {
+        padding: '4px 12px', backgroundColor: '#eee', border: '1px solid #ccc', borderRadius: '4px', cursor: 'pointer'
+      });
+      btn.addEventListener('click', e => {
+        e.preventDefault();
+        if (String(id) === String(noLyricsId)) {
+          // Clear all but first
+          const rows = document.querySelectorAll('.select-list-row');
+          for (let i = 1; i < rows.length; i++) {
+            rows[i].querySelector('button.remove-item')?.click();
+          }
+          forceValue(firstSelect, id);
+          setTimeout(() => updateWorkEditorLanguageUI(noLyricsId), 100);
+        } else {
+          if (String(firstSelect.value) === String(noLyricsId)) {
+            forceValue(firstSelect, id);
+            setTimeout(() => updateWorkEditorLanguageUI(noLyricsId), 100);
+          } else {
+            // Use an empty select if available; otherwise click "Add language" then set
+            const selects = Array.from(document.querySelectorAll('.select-list-row select'));
+            let empty = selects.find(s => !s.value);
+            if (!empty) {
+              const addBtn = document.getElementById('add-language');
+              if (addBtn) {
+                const original = addBtn.onclick;
+                addBtn.onclick = function (ev) {
+                  original?.call(this, ev);
+                  setTimeout(() => {
+                    const newSelect = document.querySelector('.select-list-row:last-child select');
+                    if (newSelect) forceValue(newSelect, id);
+                    addBtn.onclick = original;
+                  }, 50);
+                };
+                addBtn.click();
+              }
+            } else {
+              forceValue(empty, id);
+            }
+          }
+        }
+        return false;
+      });
+      quick.appendChild(btn);
+    });
+
+    // Settings gear
+    const gear = document.createElement('button');
+    gear.type = 'button';
+    gear.textContent = '⚙️';
+    Object.assign(gear.style, {
+      padding: '4px 8px', backgroundColor: '#f8f8f8', border: '1px solid #ddd', borderRadius: '4px', cursor: 'pointer'
+    });
+    gear.addEventListener('click', e => {
+      e.preventDefault();
+      const opts = getAvailableOptions(firstSelect, { isWorkEditor: true });
+      showSettingsDialog({
+        type: 'language',
+        options: opts,
+        selectedIDs: preferredLanguageIDs,
+        onSave: ids => { preferredLanguageIDs = ids; GM_setValue('mbLanguageIDs', ids); },
+      });
+      return false;
+    });
+    quick.appendChild(gear);
+
+    // Insert after the list
+    container.parentElement.insertBefore(quick, container.nextSibling);
+
+    // Observe changes to the first select and update UI
+    const obs = new MutationObserver(() => updateWorkEditorLanguageUI(noLyricsId));
+    obs.observe(firstSelect, { attributes: true, attributeFilter: ['value'] });
+    updateWorkEditorLanguageUI(noLyricsId);
+  }
+
+  // -------- Main --------
+  window.addEventListener('load', function () {
+    const isWorkEditor = location.href.includes('/work/');
+
+    // Migrate old name-based prefs to IDs if present
+    migrateNamesToIDsIfNeeded();
+
+    // Release editor: Language
+    const languageSelect = document.getElementById('language');
+    if (languageSelect) {
+      const buttons = createButtonsFromIDs(languageSelect, preferredLanguageIDs);
+      addButtonsAfter(languageSelect, buttons, {
+        onOpenSettings: () => {
+          const opts = getAvailableOptions(languageSelect, { isWorkEditor: false });
+          showSettingsDialog({
+            type: 'language',
+            options: opts,
+            selectedIDs: preferredLanguageIDs,
+            onSave: ids => { preferredLanguageIDs = ids; GM_setValue('mbLanguageIDs', ids); },
+          });
+        },
+      });
+    }
+
+    // Release editor: Script
+    const scriptSelect = document.getElementById('script');
+    if (scriptSelect) {
+      const buttons = createButtonsFromIDs(scriptSelect, preferredScriptIDs);
+      addButtonsAfter(scriptSelect, buttons, {
+        onOpenSettings: () => {
+          const opts = getAvailableOptions(scriptSelect, { isWorkEditor: false });
+          showSettingsDialog({
+            type: 'script',
+            options: opts,
+            selectedIDs: preferredScriptIDs,
+            onSave: ids => { preferredScriptIDs = ids; GM_setValue('mbScriptIDs', ids); },
+          });
+        },
+      });
+    }
+
+    // Work editor (lyrics languages list)
+    if (isWorkEditor) {
+      setTimeout(() => addWorkEditorLanguageButtons(preferredLanguageIDs), 500);
+    }
+  });
 })();
