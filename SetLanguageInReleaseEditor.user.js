@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz Customizable Language Selector
 // @namespace    https://github.com/YoGo9/Scripts
-// @version      2.0
+// @version      2.1
 // @description  Add customizable quick-select buttons for languages in MusicBrainz release editor, work editor and alias editor
 // @author       YoGo9
 // @homepage     https://github.com/YoGo9/Scripts
@@ -135,9 +135,10 @@
 
   // ----------------- Alias pages (/aliases & /add-alias) -----------------
 
-  function isAliasPage() {
-    return /\/(artist|work|label|place|series|event|recording|release|release-group)\/[0-9a-f-]+\/(aliases|add-alias)$/.test(location.pathname);
-  }
+ function isAliasPage() {
+  return /\/(artist|work|label|place|series|event|recording|release|release-group)\/[0-9a-f-]+\/(aliases|add-alias|alias\/\d+\/edit)$/.test(location.pathname);
+}
+
 
   function addAliasLocaleToolbar() {
     // Accept a few possible select names/classes for locales
@@ -183,33 +184,40 @@
   }
 
   // For /add-alias: set the only select. For /aliases: set last empty or add row then set.
-  function setAliasLocaleSingleClick(code) {
-    const isAddAlias = /\/add-alias$/.test(location.pathname);
-    const selects = document.querySelectorAll('select[name$="locale_id"], select[name$="locale"], select.locale');
-    if (!selects.length) return;
+function setAliasLocaleSingleClick(code) {
+  const isAddAlias  = /\/add-alias$/.test(location.pathname);
+  const isEditAlias = /\/alias\/\d+\/edit$/.test(location.pathname);
 
-    if (isAddAlias) {
-      forceValue(selects[0], code);
-      return;
-    }
+  const selects = document.querySelectorAll(
+    'select[name$="locale_id"], select[name$="locale"], select.locale'
+  );
+  if (!selects.length) return;
 
-    // /aliases (multi-row)
-    const last = selects[selects.length - 1];
-    if (last && !last.value) {
-      forceValue(last, code);
-      return;
-    }
-
-    const addBtn = document.querySelector('button.add-item, input.add-item');
-    if (addBtn) {
-      addBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-      setTimeout(() => {
-        const newSelects = document.querySelectorAll('select[name$="locale_id"], select[name$="locale"], select.locale');
-        const newest = newSelects[newSelects.length - 1];
-        if (newest) forceValue(newest, code);
-      }, 300);
-    }
+  // For /add-alias and /alias/{id}/edit: just set the single select
+  if (isAddAlias || isEditAlias) {
+    forceValue(selects[0], code);
+    return;
   }
+
+  // /aliases (multi-row) logic as before…
+  const last = selects[selects.length - 1];
+  if (last && !last.value) {
+    forceValue(last, code);
+    return;
+  }
+  const addBtn = document.querySelector('button.add-item, input.add-item');
+  if (addBtn) {
+    addBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    setTimeout(() => {
+      const newSelects = document.querySelectorAll(
+        'select[name$="locale_id"], select[name$="locale"], select.locale'
+      );
+      const newest = newSelects[newSelects.length - 1];
+      if (newest) forceValue(newest, code);
+    }, 300);
+  }
+}
+
 
   // ----------------- Release/Work languages & scripts -----------------
 
