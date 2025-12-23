@@ -4,7 +4,7 @@
  * MIT License
  */
 
-/* global $ helper edits sidebar requests GM_info */
+/* global $ helper edits sidebar requests GM_info aliases */
 'use strict';
 
 // ==UserScript==
@@ -90,7 +90,6 @@
   }
 
   function editNote(sourceReleaseUrl) {
-    // exactly as you requested
     return `Batch Add Recording Alias from release ${sourceReleaseUrl}`;
   }
 
@@ -104,23 +103,38 @@
     box.innerHTML = `
       <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
         <span style="font-weight:600;">Copy track titles → recording aliases</span>
+
         <input id="yomo-src" style="width:520px; max-width:100%;" placeholder="Paste SOURCE release URL or MBID">
+
+        <label style="display:flex; gap:6px; align-items:center;">
+          Type:
+          <span id="yomo-type-wrap">${aliases.type}</span>
+        </label>
+
         <label style="display:flex; gap:6px; align-items:center;">
           Locale:
           <input id="yomo-locale" style="width:70px;" value="en">
         </label>
+
         <label style="display:flex; gap:6px; align-items:center;">
           <input id="yomo-primary" type="checkbox">
           Primary
         </label>
+
         <button id="yomo-preview" type="button">Preview</button>
         <button id="yomo-submit" type="button" disabled>Submit</button>
       </div>
+
       <div id="yomo-status" style="margin-top:8px; white-space:pre-wrap;"></div>
       <div id="yomo-table" style="margin-top:8px; max-height:320px; overflow:auto;"></div>
     `;
 
     (document.querySelector('#content') || document.body).prepend(box);
+
+    // Ensure the select has a stable ID we can read
+    const typeSel = box.querySelector('#yomo-type-wrap select');
+    if (typeSel) typeSel.id = 'yomo-type';
+
     return box;
   }
 
@@ -164,7 +178,7 @@
     `;
   }
 
-  function submitOneAlias({ recordingMbid, aliasName, locale, primary, sourceUrl }, onOk, onFail) {
+  function submitOneAlias({ recordingMbid, aliasName, locale, primary, typeId, sourceUrl }, onOk, onFail) {
     const postData = {
       name: edits.encodeName(aliasName),
       sort_name: edits.encodeName(aliasName),
@@ -172,6 +186,11 @@
       primary_for_locale: primary ? 1 : 0,
       edit_note: editNote(sourceUrl),
     };
+
+    // Only send type_id if the user selected one (blank means default)
+    if (typeId) {
+      postData.type_id = typeId;
+    }
 
     requests.POST(
       `${HOST}/recording/${recordingMbid}/add-alias`,
@@ -257,6 +276,8 @@
       const locale = (ui.querySelector('#yomo-locale').value || 'en').trim() || 'en';
       const primary = !!ui.querySelector('#yomo-primary').checked;
 
+      const typeId = ui.querySelector('#yomo-type')?.value || '';
+
       setStatus(`Submitting ${lastRows.length} alias edits…`);
       const trs = Array.from(document.querySelectorAll('#yomo-table tbody tr'));
 
@@ -278,12 +299,12 @@
             aliasName: row.aliasName,
             locale,
             primary,
+            typeId,
             sourceUrl: row.sourceUrl,
           },
           (xhr) => {
             if (st) st.textContent = `OK (HTTP ${xhr.status})`;
             i += 1;
-            // small delay to avoid hammering
             setTimeout(next, 400);
           },
           (xhr) => {
