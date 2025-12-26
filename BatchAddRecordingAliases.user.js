@@ -11,7 +11,7 @@
 // @name         Batch Add Recording Aliases from another Release
 // @namespace    YoGo9
 // @author       YoGo9
-// @version      12/23/25
+// @version      12/26/25
 // @description  Paste a source release URL/MBID; copy its track titles as recording aliases on the current (target) release's recordings.
 // @homepage     https://github.com/YoGo9/Scripts
 // @updateURL    https://raw.githubusercontent.com/YoGo9/Scripts/main/BatchAddRecordingAliases.user.js
@@ -154,7 +154,7 @@
             <th>Medium</th>
             <th>#</th>
             <th>Recording</th>
-            <th>Alias to add (from source)</th>
+            <th>Alias</th>
             <th>Status</th>
           </tr>
         </thead>
