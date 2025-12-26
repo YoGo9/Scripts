@@ -23,6 +23,10 @@
 // @grant        GM_info
 // @run-at       document-end
 // ==/UserScript==
+'use strict';
+
+// 
+if (location.pathname.split('/').length !== 3) return;
 
 (function () {
   const HOST = location.origin;
