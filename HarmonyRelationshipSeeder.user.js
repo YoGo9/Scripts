@@ -3,7 +3,7 @@
 // @namespace   http://tampermonkey.net/
 // @downloadURL https://github.com/YoGo9/Scripts/raw/main/HarmonyRelationshipSeeder.user.js
 // @updateURL   https://github.com/YoGo9/Scripts/raw/main/HarmonyRelationshipSeeder.user.js
-// @version     1.6
+// @version     1.7
 // @tag         ai-created
 // @description Generate MusicBrainz relationship seeder URLs from Harmony streaming links.
 // @author      YoGo9
@@ -17,7 +17,7 @@
 (function () {
   'use strict';
 
-  const INJECT_MARK = 'hrs-injected-v16';
+  const INJECT_MARK = 'hrs-injected-v17';
 
   const serviceMap = {
     spotify:  { name: 'Spotify',  color: '#1DB954' },
@@ -116,21 +116,19 @@
       wrapper.appendChild(a);
     });
 
-    if (availableServices.length > 1) {
-      const sep = document.createElement('span');
-      sep.textContent = ' | ';
-      sep.style.margin = '0 10px';
-      sep.style.color = '#666';
-      wrapper.appendChild(sep);
+    const sep = document.createElement('span');
+    sep.textContent = ' | ';
+    sep.style.margin = '0 10px';
+    sep.style.color = '#666';
+    wrapper.appendChild(sep);
 
-      const allUrl = generateAllServicesSeeder();
-      if (allUrl) {
-        const allBtn = document.createElement('a');
-        allBtn.href = allUrl;
-        allBtn.textContent = 'All Services';
-        Object.assign(allBtn.style, btnStyle('#28a745', true));
-        wrapper.appendChild(allBtn);
-      }
+    const allUrl = generateAllServicesSeeder();
+    if (allUrl) {
+      const allBtn = document.createElement('a');
+      allBtn.href = allUrl;
+      allBtn.textContent = 'All Services';
+      Object.assign(allBtn.style, btnStyle('#28a745', true));
+      wrapper.appendChild(allBtn);
     }
 
     const hint = document.createElement('p');
