@@ -25,8 +25,10 @@
 // ==/UserScript==
 'use strict';
 
-// 
-if (location.pathname.split('/').length !== 3) return;
+if (!/^\/release\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(location.pathname)) {
+  return;
+}
+
 
 (function () {
   const HOST = location.origin;
