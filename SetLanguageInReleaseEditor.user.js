@@ -2,7 +2,7 @@
 // @name         MusicBrainz Customizable Language Selector
 // @namespace    https://github.com/YoGo9/Scripts
 // @version      2.2
-// @description  Add customizable quick-select buttons for languages in MusicBrainz release editor, work editor and alias editor + add a Clear button for release annotation
+// @description  Add customizable quick-select buttons for languages in MusicBrainz release editor, work editor and alias editor
 // @author       YoGo9
 // @homepage     https://github.com/YoGo9/Scripts
 // @updateURL    https://raw.githubusercontent.com/YoGo9/Scripts/main/SetLanguageInReleaseEditor.user.js
