@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MusicBrainz Customizable Language Selector
 // @namespace    https://github.com/YoGo9/Scripts
-// @version      2.1
+// @version      2.2
 // @description  Add customizable quick-select buttons for languages in MusicBrainz release editor, work editor and alias editor
 // @author       YoGo9
 // @homepage     https://github.com/YoGo9/Scripts
@@ -135,13 +135,11 @@
 
   // ----------------- Alias pages (/aliases & /add-alias) -----------------
 
- function isAliasPage() {
-  return /\/(artist|work|label|place|series|event|recording|release|release-group)\/[0-9a-f-]+\/(aliases|add-alias|alias\/\d+\/edit)$/.test(location.pathname);
-}
-
+  function isAliasPage() {
+    return /\/(artist|work|label|place|series|event|recording|release|release-group)\/[0-9a-f-]+\/(aliases|add-alias|alias\/\d+\/edit)$/.test(location.pathname);
+  }
 
   function addAliasLocaleToolbar() {
-    // Accept a few possible select names/classes for locales
     const localeSelects = document.querySelectorAll('select[name$="locale_id"], select[name$="locale"], select.locale');
     if (!localeSelects.length) return;
 
@@ -150,11 +148,9 @@
       .filter(o => o.value && !/—/.test(o.text))
       .map(o => ({ value: o.value, text: o.text.trim() }));
 
-    // Filter stored codes to ones actually present here
     const quick = aliasLocales.filter(code => options.some(o => o.value === code));
     if (!quick.length) return;
 
-    // Build toolbar
     const bar = document.createElement('div');
     Object.assign(bar.style, { margin: '10px 0', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px' });
     const title = document.createElement('strong');
@@ -167,7 +163,6 @@
       bar.appendChild(createButton(opt.text, () => setAliasLocaleSingleClick(code)));
     });
 
-    // ⚙️
     const gear = createButton('⚙️', () => {
       showSettingsDialog({
         type: 'alias locales',
@@ -178,46 +173,41 @@
     });
     bar.appendChild(gear);
 
-    // Insert near the first locale select
     const anchor = firstSelect.closest('.row, .form-row, fieldset, form, #page') || firstSelect.parentElement;
     anchor.parentElement.insertBefore(bar, anchor);
   }
 
-  // For /add-alias: set the only select. For /aliases: set last empty or add row then set.
-function setAliasLocaleSingleClick(code) {
-  const isAddAlias  = /\/add-alias$/.test(location.pathname);
-  const isEditAlias = /\/alias\/\d+\/edit$/.test(location.pathname);
+  function setAliasLocaleSingleClick(code) {
+    const isAddAlias  = /\/add-alias$/.test(location.pathname);
+    const isEditAlias = /\/alias\/\d+\/edit$/.test(location.pathname);
 
-  const selects = document.querySelectorAll(
-    'select[name$="locale_id"], select[name$="locale"], select.locale'
-  );
-  if (!selects.length) return;
+    const selects = document.querySelectorAll(
+      'select[name$="locale_id"], select[name$="locale"], select.locale'
+    );
+    if (!selects.length) return;
 
-  // For /add-alias and /alias/{id}/edit: just set the single select
-  if (isAddAlias || isEditAlias) {
-    forceValue(selects[0], code);
-    return;
+    if (isAddAlias || isEditAlias) {
+      forceValue(selects[0], code);
+      return;
+    }
+
+    const last = selects[selects.length - 1];
+    if (last && !last.value) {
+      forceValue(last, code);
+      return;
+    }
+    const addBtn = document.querySelector('button.add-item, input.add-item');
+    if (addBtn) {
+      addBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      setTimeout(() => {
+        const newSelects = document.querySelectorAll(
+          'select[name$="locale_id"], select[name$="locale"], select.locale'
+        );
+        const newest = newSelects[newSelects.length - 1];
+        if (newest) forceValue(newest, code);
+      }, 300);
+    }
   }
-
-  // /aliases (multi-row) logic as before…
-  const last = selects[selects.length - 1];
-  if (last && !last.value) {
-    forceValue(last, code);
-    return;
-  }
-  const addBtn = document.querySelector('button.add-item, input.add-item');
-  if (addBtn) {
-    addBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-    setTimeout(() => {
-      const newSelects = document.querySelectorAll(
-        'select[name$="locale_id"], select[name$="locale"], select.locale'
-      );
-      const newest = newSelects[newSelects.length - 1];
-      if (newest) forceValue(newest, code);
-    }, 300);
-  }
-}
-
 
   // ----------------- Release/Work languages & scripts -----------------
 
@@ -226,8 +216,8 @@ function setAliasLocaleSingleClick(code) {
     for (const opt of selectEl.options) {
       const text = opt.text?.trim();
       if (!text || text === '—' || text === '⠀' || text.startsWith('Frequently used')) continue;
-      if (isWorkEditor && /^\[.*multiple.*\]/i.test(text)) continue;   // skip [Multiple languages] in Work
-      if (!isWorkEditor && /^\[.*lyrics.*\]/i.test(text)) continue;    // skip [No lyrics] in Release
+      if (isWorkEditor && /^\[.*multiple.*\]/i.test(text)) continue;
+      if (!isWorkEditor && /^\[.*lyrics.*\]/i.test(text)) continue;
       out.push({ id: String(opt.value), text });
     }
     return out;
@@ -370,6 +360,47 @@ function setAliasLocaleSingleClick(code) {
     updateWorkEditorLanguageUI(noLyricsId);
   }
 
+  // ----------------- Clear Annotation button (Release add/edit) -----------------
+
+  function initClearAnnotation() {
+    if (!/^\/release\/add\b/.test(location.pathname) && !/^\/release\/[0-9a-f-]+\/edit\b/.test(location.pathname)) {
+      return;
+    }
+
+    function ensureClearButton() {
+      const ta = document.getElementById('annotation');
+      if (!ta) return;
+
+      const label = document.querySelector('label[for="annotation"]');
+      if (!label) return;
+
+      if (document.getElementById('mb-clear-annotation')) return;
+
+      const btn = document.createElement('button');
+      btn.id = 'mb-clear-annotation';
+      btn.type = 'button';
+      btn.textContent = 'Clear';
+      btn.className = 'button';
+      btn.style.marginLeft = '8px';
+
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        ta.value = '';
+        ta.dispatchEvent(new Event('input', { bubbles: true }));
+        ta.dispatchEvent(new Event('change', { bubbles: true }));
+        ta.focus();
+        return false;
+      });
+
+      label.appendChild(btn);
+    }
+
+    const obs = new MutationObserver(ensureClearButton);
+    obs.observe(document.documentElement, { childList: true, subtree: true });
+
+    ensureClearButton();
+  }
+
   // ----------------- Main -----------------
 
   window.addEventListener('load', function () {
@@ -381,6 +412,9 @@ function setAliasLocaleSingleClick(code) {
 
     const isWorkEditor = location.href.includes('/work/');
     migrateNamesToIDsIfNeeded();
+
+    // Add clear annotation button (release add/edit)
+    initClearAnnotation();
 
     // Release editor: language + script quick buttons
     const languageSelect = document.getElementById('language');
@@ -423,16 +457,4 @@ function setAliasLocaleSingleClick(code) {
     }
   });
 
-  // Small helper used earlier
-  function createButtonsFromIDs(selectEl, preferredIDs) {
-    return preferredIDs
-      .map(id => {
-        const opt = Array.from(selectEl.options).find(o => String(o.value) === String(id));
-        if (!opt) return null;
-        return { text: opt.text.trim(), onClick: () => forceValue(selectEl, id) };
-      })
-      .filter(Boolean);
-  }
-
 })();
-
