@@ -11,7 +11,7 @@
 // @name         Batch Add Recording Aliases from another Release
 // @namespace    YoGo9
 // @author       YoGo9
-// @version      12/26/25
+// @version      05/26/26
 // @description  Paste a source release URL/MBID; copy its track titles as recording aliases on the current (target) release's recordings.
 // @homepage     https://github.com/YoGo9/Scripts
 // @updateURL    https://raw.githubusercontent.com/YoGo9/Scripts/main/BatchAddRecordingAliases.user.js
@@ -36,6 +36,55 @@ if (!/^\/release\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
   const RELEASE_MBID_RE = /\/release\/([0-9a-f-]{36})/i;
   const UUID_RE = /^[0-9a-f-]{36}$/i;
+
+  const LS_KEY = 'yomo-locale-history';
+  const MAX_HISTORY = 5;
+
+  function getLocaleHistory() {
+    try {
+      return JSON.parse(localStorage.getItem(LS_KEY) || '[]');
+    } catch { return []; }
+  }
+
+  function recordLocaleUse(code) {
+    const hist = getLocaleHistory().filter(c => c !== code);
+    hist.unshift(code);
+    localStorage.setItem(LS_KEY, JSON.stringify(hist.slice(0, MAX_HISTORY)));
+  }
+
+  function buildLocaleSelect() {
+    const history = getLocaleHistory();
+
+    // Full locale map from mbz-loujine-common
+    const localeMap = server.locale; // { 'English': 'en', 'Hebrew': 'he', ... }
+    const allEntries = Object.entries(localeMap)
+      .map(([name, code]) => ({ name, code }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    const recentCodes = new Set(history);
+    const recentEntries = history
+      .map(code => allEntries.find(e => e.code === code))
+      .filter(Boolean);
+    const otherEntries = allEntries.filter(e => !recentCodes.has(e.code));
+
+    let html = `<select id="yomo-locale" style="max-width:160px;">`;
+
+    if (recentEntries.length) {
+      html += `<optgroup label="Recently used">`;
+      for (const { name, code } of recentEntries) {
+        html += `<option value="${code}"${code === 'en' || history[0] === code ? ' selected' : ''}>${code} ${name}</option>`;
+      }
+      html += `</optgroup>`;
+    }
+
+    html += `<optgroup label="All locales">`;
+    for (const { name, code } of otherEntries) {
+      html += `<option value="${code}"${!recentEntries.length && code === 'en' ? ' selected' : ''}>${code} ${name}</option>`;
+    }
+    html += `</optgroup></select>`;
+
+    return html;
+  }
 
   function parseReleaseMbid(input) {
     const s = String(input || '').trim();
@@ -119,7 +168,7 @@ if (!/^\/release\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
         <label style="display:flex; gap:6px; align-items:center;">
           Locale:
-          <input id="yomo-locale" style="width:70px;" value="en">
+          ${buildLocaleSelect()}
         </label>
 
         <label style="display:flex; gap:6px; align-items:center;">
@@ -137,7 +186,6 @@ if (!/^\/release\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
     (document.querySelector('#content') || document.body).prepend(box);
 
-    // Ensure the select has a stable ID we can read
     const typeSel = box.querySelector('#yomo-type-wrap select');
     if (typeSel) typeSel.id = 'yomo-type';
 
@@ -193,7 +241,6 @@ if (!/^\/release\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
       edit_note: editNote(sourceUrl),
     };
 
-    // Only send type_id if the user selected one (blank means default)
     if (typeId) {
       postData.type_id = typeId;
     }
@@ -233,7 +280,6 @@ if (!/^\/release\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
       let aliasName = byRec.get(t.recordingMbid);
       let matchType = 'recording';
 
-      // Fallback if recordings differ (not ideal but better than nothing)
       if (!aliasName) {
         aliasName = byPos.get(`${t.mediumPosition}-${t.trackPosition}`);
         matchType = aliasName ? 'position' : 'none';
@@ -279,15 +325,16 @@ if (!/^\/release\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
     ui.querySelector('#yomo-submit').addEventListener('click', async () => {
       if (!lastRows || !lastRows.length) return;
 
-      const locale = (ui.querySelector('#yomo-locale').value || 'en').trim() || 'en';
+      const locale = ui.querySelector('#yomo-locale').value || 'en';
       const primary = !!ui.querySelector('#yomo-primary').checked;
-
       const typeId = ui.querySelector('#yomo-type')?.value || '';
+
+      // Record this locale as most recently used
+      recordLocaleUse(locale);
 
       setStatus(`Submitting ${lastRows.length} alias edits…`);
       const trs = Array.from(document.querySelectorAll('#yomo-table tbody tr'));
 
-      // Send sequentially to be gentle
       let i = 0;
       const next = () => {
         if (i >= lastRows.length) {
