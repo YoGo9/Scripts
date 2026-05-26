@@ -7,7 +7,7 @@
 // @homepage     https://github.com/YoGo9/Scripts
 // @updateURL    https://raw.githubusercontent.com/YoGo9/Scripts/main/CopyRecordingsFromRelease.user.js
 // @downloadURL  https://raw.githubusercontent.com/YoGo9/Scripts/main/CopyRecordingsFromRelease.user.js
-// @match        *://*.musicbrainz.org/release/add
+// @match        *://*.musicbrainz.org/release/add?*
 // @match        *://*.musicbrainz.org/release/*/edit
 // @grant        none
 // ==/UserScript==
