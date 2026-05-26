@@ -3,7 +3,7 @@
 // @namespace   http://tampermonkey.net/
 // @downloadURL https://github.com/YoGo9/Scripts/raw/main/HarmonyRelationshipSeeder.user.js
 // @updateURL   https://github.com/YoGo9/Scripts/raw/main/HarmonyRelationshipSeeder.user.js
-// @version     1.7
+// @version     1.8
 // @tag         ai-created
 // @description Generate MusicBrainz relationship seeder URLs from Harmony streaming links.
 // @author      YoGo9
@@ -17,7 +17,7 @@
 (function () {
   'use strict';
 
-  const INJECT_MARK = 'hrs-injected-v17';
+  const INJECT_MARK = 'hrs-injected-v18';
 
   const serviceMap = {
     spotify:  { name: 'Spotify',  color: '#1DB954' },
@@ -26,6 +26,7 @@
     tidal:    { name: 'Tidal',    color: '#000000' },
     bandcamp: { name: 'Bandcamp', color: '#629AA0' },
     beatport: { name: 'Beatport', color: '#01FF01' },
+    qobuz:    { name: 'Qobuz',    color: '#003CA6' },
   };
 
   const providerNameMap = {
@@ -35,6 +36,7 @@
     tidal: 'Tidal',
     bandcamp: 'Bandcamp',
     beatport: 'Beatport',
+    qobuz: 'Qobuz',
   };
 
   // MusicBrainz link type IDs → common names
@@ -63,7 +65,7 @@
   mo.observe(document.documentElement, { childList: true, subtree: true });
 
   function init() {
-    // only inject once per render “area”
+    // only inject once per render "area"
     if (document.querySelector(`[data-${INJECT_MARK}="1"]`)) return;
 
     const firstAction = findFirstRecordingAction();
@@ -79,7 +81,7 @@
   }
 
   function findFirstRecordingAction() {
-    // Look for the “Link external IDs” action for recordings
+    // Look for the "Link external IDs" action for recordings
     // It looks like:
     // <div class="action"> <p><a href=".../recording/{mbid}/edit?...edit-recording.url...">Link external IDs</a> ...</p></div>
     const candidates = Array.from(document.querySelectorAll('.action a[href*="/recording/"][href*="/edit"]'));
@@ -158,7 +160,7 @@
 
   function getAvailableServices() {
     const services = new Set();
-    // Each “action” block contains <span class="entity-links"> with provider anchors
+    // Each "action" block contains <span class="entity-links"> with provider anchors
     document.querySelectorAll('.action .entity-links a[href]').forEach(a => {
       const s = getServiceFromUrl(a.href);
       if (s !== 'unknown') services.add(s);
@@ -177,6 +179,7 @@
     if (url.includes('tidal.com/track/')) return 'tidal';
     if (url.includes('bandcamp.com/track/')) return 'bandcamp';
     if (url.includes('beatport.com/track/')) return 'beatport';
+    if (url.includes('open.qobuz.com/track/')) return 'qobuz';
     return 'unknown';
   }
 
@@ -213,7 +216,7 @@
   }
 
   function extractReleaseMbid() {
-    // Album-level MB link is rendered in ProviderList/headers; it’s safe to find any release link
+    // Album-level MB link is rendered in ProviderList/headers; it's safe to find any release link
     const mbLink = document.querySelector('a[href*="musicbrainz.org/release/"]');
     const m = mbLink?.href.match(/musicbrainz\.org\/release\/([a-f0-9-]+)/);
     return m ? m[1] : null;
