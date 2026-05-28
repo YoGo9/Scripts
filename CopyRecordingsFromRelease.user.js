@@ -1,14 +1,14 @@
 // ==UserScript==
 // @name         MB: Copy Recordings From Release
 // @namespace    https://github.com/YoGo9
-// @version      5/19/2026
+// @version      5/28/2026
 // @description  On the Recordings tab of the release editor, paste a release MBID or URL to auto-assign all recordings by track position
 // @author       YoGo9
 // @homepage     https://github.com/YoGo9/Scripts
 // @updateURL    https://raw.githubusercontent.com/YoGo9/Scripts/main/CopyRecordingsFromRelease.user.js
 // @downloadURL  https://raw.githubusercontent.com/YoGo9/Scripts/main/CopyRecordingsFromRelease.user.js
-// @match        *://*.musicbrainz.org/release/add?*
-// @match        *://*.musicbrainz.org/release/*/edit
+// @match        *://*.musicbrainz.org/release/add*
+// @match        *://*.musicbrainz.org/release/*/edit*
 // @grant        none
 // ==/UserScript==
 
