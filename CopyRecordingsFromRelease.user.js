@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         MB: Copy Recordings From Release
 // @namespace    https://github.com/YoGo9
-// @version      5/28/2026
-// @description  On the Recordings tab of the release editor, paste a release MBID or URL to auto-assign all recordings by track position
+// @version      6/3/2026
+// @description  On the Recordings tab of the release editor, paste a release MBID or URL to auto-assign all recordings by track position. Also suggests existing releases from the same release group.
 // @author       YoGo9
 // @homepage     https://github.com/YoGo9/Scripts
 // @updateURL    https://raw.githubusercontent.com/YoGo9/Scripts/main/CopyRecordingsFromRelease.user.js
@@ -21,26 +21,23 @@
 
     function injectUI() {
         if (document.getElementById('cfr-widget')) return;
-
         const anchor = document.querySelector('.changes');
         if (!anchor) return;
 
         const wrapper = document.createElement('div');
         wrapper.id = 'cfr-widget';
-        wrapper.style.cssText = [
-            'margin: 12px 0 0 0',
-            'padding: 10px 12px',
-            'background: #f0f4ff',
-            'border: 1px solid #99a8d0',
-            'border-radius: 4px',
-            'font-size: 13px',
-            'clear: both',
-        ].join(';');
+        wrapper.style.cssText = 'margin:12px 0 0 0;padding:10px 12px;background:#f0f4ff;border:1px solid #99a8d0;border-radius:4px;font-size:13px;clear:both;';
 
         wrapper.innerHTML =
             '<strong style="display:block;margin-bottom:6px;">&#x1F4CB; Copy recordings from another release</strong>' +
+            // Suggestions section (hidden until populated)
+            '<div id="cfr-suggestions" style="display:none;margin-bottom:8px;">' +
+                '<div style="margin-bottom:4px;font-weight:bold;font-size:12px;color:#444;">Releases in this release group:</div>' +
+                '<div id="cfr-suggestion-list"></div>' +
+            '</div>' +
+            // Manual paste section
             '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">' +
-                '<input id="cfr-input" type="text" placeholder="Paste release MBID or URL\u2026"' +
+                '<input id="cfr-input" type="text" placeholder="Or paste a release MBID or URL\u2026"' +
                 ' style="flex:1;min-width:220px;padding:4px 6px;font-size:13px;border:1px solid #aaa;border-radius:3px;" />' +
                 '<button id="cfr-btn" type="button"' +
                 ' style="padding:4px 10px;font-size:13px;cursor:pointer;border-radius:3px;border:1px solid #888;background:#e8eaf0;">' +
@@ -50,10 +47,121 @@
 
         anchor.appendChild(wrapper);
 
-        document.getElementById('cfr-btn').addEventListener('click', onApply);
+        document.getElementById('cfr-btn').addEventListener('click', onApplyFromInput);
         document.getElementById('cfr-input').addEventListener('keydown', function (e) {
-            if (e.key === 'Enter') onApply();
+            if (e.key === 'Enter') onApplyFromInput();
         });
+
+        // Try to load RG suggestions
+        loadRGSuggestions();
+    }
+
+    // ── Release group suggestions ─────────────────────────────────────────────
+
+    function loadRGSuggestions() {
+        var vm = getReleaseEditorVM();
+        if (!vm) return;
+
+        var release = vm.rootField.release();
+        if (!release) return;
+
+        var rg = release.releaseGroup();
+        var rgGid = rg && rg.gid;
+        if (!rgGid) {
+            // RG may not be set yet; subscribe and retry once
+            release.releaseGroup.subscribe(function (newRG) {
+                if (newRG && newRG.gid) fetchAndRenderSuggestions(newRG.gid);
+            });
+            return;
+        }
+
+        fetchAndRenderSuggestions(rgGid);
+    }
+
+    function fetchAndRenderSuggestions(rgGid) {
+        var url = '/ws/2/release?release-group=' + rgGid + '&inc=artist-credits+media+labels+release-groups&fmt=json';
+        fetch(url)
+            .then(function (r) { return r.ok ? r.json() : Promise.reject('HTTP ' + r.status); })
+            .then(function (data) {
+                var releases = (data.releases || []);
+                if (!releases.length) return;
+                renderSuggestions(releases);
+            })
+            .catch(function (e) { console.warn('[CFR] RG fetch failed:', e); });
+    }
+
+    function renderSuggestions(releases) {
+        var list = document.getElementById('cfr-suggestion-list');
+        var section = document.getElementById('cfr-suggestions');
+        if (!list || !section) return;
+
+        list.innerHTML = '';
+
+        releases.forEach(function (rel) {
+            var mbid = rel.id;
+            var title = rel.title || '(untitled)';
+
+            // Build a human-readable descriptor: format · tracks · date · country
+            var media = rel.media || [];
+            var formats = [];
+            var trackCounts = [];
+            media.forEach(function (m) {
+                if (m.format) formats.push(m.format);
+                if (m['track-count']) trackCounts.push(m['track-count']);
+            });
+            var formatStr = formats.length ? formats.join('+') : '';
+            var trackStr = trackCounts.length ? trackCounts.join('+') + ' tracks' : '';
+
+            var events = rel['release-events'] || [];
+            var dates = events.map(function (e) { return e.date; }).filter(Boolean);
+            var countries = [];
+            events.forEach(function (e) {
+                var codes = e.area && e.area['iso-3166-1-codes'];
+                if (codes) codes.forEach(function (c) { countries.push(c); });
+            });
+            var dateStr = dates.length ? dates[0] : '';
+            var countryStr = [...new Set(countries)].join(', ');
+
+            var meta = [formatStr, trackStr, dateStr, countryStr].filter(Boolean).join(' · ');
+
+            var btn = document.createElement('button');
+            btn.type = 'button';
+            btn.style.cssText = 'display:block;width:100%;text-align:left;margin-bottom:3px;padding:4px 7px;font-size:12px;cursor:pointer;border:1px solid #bbb;border-radius:3px;background:#fff;';
+            btn.innerHTML = '<strong>' + escapeHtml(title) + '</strong>' +
+                (meta ? ' <span style="color:#666;font-weight:normal;">' + escapeHtml(meta) + '</span>' : '');
+
+            btn.addEventListener('click', function () {
+                applyFromMBID(mbid);
+            });
+            list.appendChild(btn);
+        });
+
+        section.style.display = 'block';
+    }
+
+    function escapeHtml(s) {
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    // ── Apply from manual input ───────────────────────────────────────────────
+
+    function onApplyFromInput() {
+        var raw = (document.getElementById('cfr-input') || {}).value;
+        if (!raw || !raw.trim()) { setStatus('Please paste a release MBID or URL.', '#a00'); return; }
+        var match = raw.trim().match(MBID_RE);
+        if (!match) { setStatus('Could not find a valid MBID in the input.', '#a00'); return; }
+        applyFromMBID(match[0]);
+    }
+
+    function applyFromMBID(mbid) {
+        setStatus('Fetching release ' + mbid + '\u2026');
+        fetch('/ws/2/release/' + mbid + '?inc=recordings+artist-credits&fmt=json')
+            .then(function (r) {
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                return r.json();
+            })
+            .then(function (data) { applyRecordings(data); })
+            .catch(function (err) { setStatus('Error fetching release: ' + err.message, '#a00'); });
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -63,34 +171,9 @@
         if (el) { el.textContent = msg; el.style.color = color || '#555'; }
     }
 
-    async function onApply() {
-        var raw = (document.getElementById('cfr-input') || {}).value;
-        if (!raw || !raw.trim()) { setStatus('Please paste a release MBID or URL.', '#a00'); return; }
-
-        var match = raw.trim().match(MBID_RE);
-        if (!match) { setStatus('Could not find a valid MBID in the input.', '#a00'); return; }
-
-        var mbid = match[0];
-        setStatus('Fetching release ' + mbid + '\u2026');
-
-        var releaseData;
-        try {
-            var resp = await fetch('/ws/2/release/' + mbid + '?inc=recordings+artist-credits&fmt=json');
-            if (!resp.ok) throw new Error('HTTP ' + resp.status);
-            releaseData = await resp.json();
-        } catch (err) {
-            setStatus('Error fetching release: ' + err.message, '#a00');
-            return;
-        }
-
-        applyRecordings(releaseData);
-    }
-
     // ── Apply recordings ──────────────────────────────────────────────────────
 
     function applyRecordings(releaseData) {
-        // Build map: "mediumPos:trackPos" -> WS2 recording object
-        // WS2 medium.position and track.position are both 1-based integers
         var trackMap = new Map();
         (releaseData.media || []).forEach(function (medium) {
             var medPos = medium.position;
@@ -101,16 +184,10 @@
             });
         });
 
-        if (!trackMap.size) {
-            setStatus('No recordings found in that release.', '#a00');
-            return;
-        }
+        if (!trackMap.size) { setStatus('No recordings found in that release.', '#a00'); return; }
 
         var vm = getReleaseEditorVM();
-        if (!vm) {
-            setStatus('Could not access the release editor view-model.', '#a00');
-            return;
-        }
+        if (!vm) { setStatus('Could not access the release editor view-model.', '#a00'); return; }
 
         var release = vm.rootField.release();
         if (!release) { setStatus('No release loaded in editor.', '#a00'); return; }
@@ -118,24 +195,15 @@
         var applied = 0, skipped = 0, notFound = 0;
 
         release.mediums().forEach(function (medium) {
-            var medPos = medium.position();   // KO observable, 1-based
-
+            var medPos = medium.position();
             medium.tracks().forEach(function (track) {
-                var trackPos = track.position(); // 1-based (0 = pregap)
-                var key = medPos + ':' + trackPos;
-                var recData = trackMap.get(key);
-
+                var trackPos = track.position();
+                var recData = trackMap.get(medPos + ':' + trackPos);
                 if (!recData) { notFound++; return; }
-
-                // Already has this exact recording
                 if (track.hasExistingRecording() && track.recording() && track.recording().gid === recData.id) {
-                    skipped++;
-                    return;
+                    skipped++; return;
                 }
-
                 try {
-                    // WS2 uses rec.id for MBIDs; MB.entity expects rec.gid
-                    // WS2 artist-credit uses artist.id; MB.entity expects artist.gid
                     var names = (recData['artist-credit'] || [])
                         .filter(function (ac) { return ac && typeof ac === 'object' && ac.artist; })
                         .map(function (ac) {
@@ -150,15 +218,12 @@
                                 },
                             };
                         });
-
-                    var entityData = {
+                    var entity = MB.entity({
                         gid: recData.id,
                         name: recData.title,
                         length: recData.length || null,
                         artistCredit: { names: names },
-                    };
-
-                    var entity = MB.entity(entityData, 'recording');
+                    }, 'recording');
                     track.recording(entity);
                     applied++;
                 } catch (e) {
@@ -173,8 +238,6 @@
     }
 
     // ── Access the KO view-model ──────────────────────────────────────────────
-    //   viewModel.js:  MB.releaseEditor = { rootField: { release: ko.observable() } }
-    //   init.js:       MB._releaseEditor = releaseEditor  (full instance)
 
     function getReleaseEditorVM() {
         try {
@@ -182,8 +245,6 @@
                 return window.MB.releaseEditor;
             if (window.MB && window.MB._releaseEditor && window.MB._releaseEditor.rootField)
                 return window.MB._releaseEditor;
-
-            // Fallback: KO context walk
             var changesDiv = document.querySelector('.changes[data-bind]');
             if (changesDiv) {
                 var ctx = ko.contextFor(changesDiv);
@@ -194,9 +255,7 @@
                     }
                 }
             }
-        } catch (e) {
-            console.error('[CFR] getReleaseEditorVM error:', e);
-        }
+        } catch (e) { console.error('[CFR] getReleaseEditorVM error:', e); }
         return null;
     }
 
