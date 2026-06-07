@@ -3,7 +3,7 @@
 // @namespace   http://tampermonkey.net/
 // @downloadURL https://github.com/YoGo9/Scripts/raw/main/HarmonyRelationshipSeeder.user.js
 // @updateURL   https://github.com/YoGo9/Scripts/raw/main/HarmonyRelationshipSeeder.user.js
-// @version     1.8
+// @version     1.9
 // @tag         ai-created
 // @description Generate MusicBrainz relationship seeder URLs from Harmony streaming links.
 // @author      YoGo9
@@ -17,16 +17,18 @@
 (function () {
   'use strict';
 
-  const INJECT_MARK = 'hrs-injected-v18';
+  const INJECT_MARK = 'hrs-injected-v19';
 
   const serviceMap = {
-    spotify:  { name: 'Spotify',  color: '#1DB954' },
-    deezer:   { name: 'Deezer',   color: '#FF6600' },
-    itunes:   { name: 'iTunes',   color: '#A6A6A6' },
-    tidal:    { name: 'Tidal',    color: '#000000' },
-    bandcamp: { name: 'Bandcamp', color: '#629AA0' },
-    beatport: { name: 'Beatport', color: '#01FF01' },
-    qobuz:    { name: 'Qobuz',    color: '#003CA6' },
+    spotify:  { name: 'Spotify',    color: '#1DB954' },
+    deezer:   { name: 'Deezer',     color: '#FF6600' },
+    itunes:   { name: 'iTunes',     color: '#A6A6A6' },
+    tidal:    { name: 'Tidal',      color: '#000000' },
+    bandcamp: { name: 'Bandcamp',   color: '#629AA0' },
+    beatport: { name: 'Beatport',   color: '#01FF01' },
+    qobuz:    { name: 'Qobuz',      color: '#003CA6' },
+    bugs:     { name: 'Bugs!',      color: '#FF3D33' },
+    vibe:     { name: 'Naver Vibe', color: '#E404AA' },
   };
 
   const providerNameMap = {
@@ -37,6 +39,8 @@
     bandcamp: 'Bandcamp',
     beatport: 'Beatport',
     qobuz: 'Qobuz',
+    bugs: 'Bugs!',
+    vibe: 'Naver Vibe',
   };
 
   // MusicBrainz link type IDs → common names
@@ -180,6 +184,8 @@
     if (url.includes('bandcamp.com/track/')) return 'bandcamp';
     if (url.includes('beatport.com/track/')) return 'beatport';
     if (url.includes('open.qobuz.com/track/')) return 'qobuz';
+    if (url.includes('music.bugs.co.kr/track/' )) return 'bugs';
+    if (url.includes('vibe.naver.com/track/' )) return 'vibe';
     return 'unknown';
   }
 
