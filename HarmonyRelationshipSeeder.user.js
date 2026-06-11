@@ -3,13 +3,15 @@
 // @namespace   http://tampermonkey.net/
 // @downloadURL https://github.com/YoGo9/Scripts/raw/main/HarmonyRelationshipSeeder.user.js
 // @updateURL   https://github.com/YoGo9/Scripts/raw/main/HarmonyRelationshipSeeder.user.js
-// @version     1.9
+// @version     1.9.1
 // @tag         ai-created
 // @description Generate MusicBrainz relationship seeder URLs from Harmony streaming links.
 // @author      YoGo9
 // @license     MIT
 // @match       https://harmony.pulsewidth.org.uk/release/actions*
 // @match       https://harmony.pulsewidth.org.uk/release/*/actions*
+// @match       https://harmony.mybrainz.dev/release/actions*
+// @match       https://harmony.mybrainz.dev/release/*/actions*
 // @grant       none
 // @run-at      document-end
 // ==/UserScript==
