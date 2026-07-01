@@ -3,7 +3,7 @@
 // @namespace   http://tampermonkey.net/
 // @downloadURL https://github.com/YoGo9/Scripts/raw/main/HarmonyRelationshipSeeder.user.js
 // @updateURL   https://github.com/YoGo9/Scripts/raw/main/HarmonyRelationshipSeeder.user.js
-// @version     1.9.1
+// @version     1.9.2
 // @tag         ai-created
 // @description Generate MusicBrainz relationship seeder URLs from Harmony streaming links.
 // @author      YoGo9
@@ -30,6 +30,8 @@
     beatport: { name: 'Beatport',   color: '#01FF01' },
     qobuz:    { name: 'Qobuz',      color: '#003CA6' },
     bugs:     { name: 'Bugs!',      color: '#FF3D33' },
+    melon:    { name: 'Melon',      color: '#00CD3C' },
+    genie:    { name: 'Genie',      color: '#0096FF' },
     vibe:     { name: 'Naver Vibe', color: '#E404AA' },
   };
 
@@ -42,6 +44,8 @@
     beatport: 'Beatport',
     qobuz: 'Qobuz',
     bugs: 'Bugs!',
+    melon: 'Melon',
+    genie: 'Genie',
     vibe: 'Naver Vibe',
   };
 
@@ -187,6 +191,8 @@
     if (url.includes('beatport.com/track/')) return 'beatport';
     if (url.includes('open.qobuz.com/track/')) return 'qobuz';
     if (url.includes('music.bugs.co.kr/track/' )) return 'bugs';
+    if (url.includes('melon.com/song/' )) return 'melon';
+    if (url.includes('genie.co.kr/detail/songInfo' )) return 'genie';
     if (url.includes('vibe.naver.com/track/' )) return 'vibe';
     return 'unknown';
   }
