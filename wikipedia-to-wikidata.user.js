@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name          MusicBrainz Wikipedia to Wikidata Converter
-// @version       2026.8.2
+// @version       2026.8.2.1
 // @namespace     https://github.com/YoGo9
 // @author        YoGo9
 // @description   Convert Wikipedia links to their equivalent Wikidata entities
@@ -12,21 +12,33 @@
 // @connect       wikipedia.org
 // @connect       wikidata.org
 // @connect       musicbrainz.org
+// @match         *://*.musicbrainz.org/area/*
 // @match         *://*.musicbrainz.org/artist/*
 // @match         *://*.musicbrainz.org/event/*
+// @match         *://*.musicbrainz.org/genre/*
+// @match         *://*.musicbrainz.org/instrument/*
 // @match         *://*.musicbrainz.org/label/*
 // @match         *://*.musicbrainz.org/place/*
+// @match         *://*.musicbrainz.org/recording/*
+// @match         *://*.musicbrainz.org/release/*
 // @match         *://*.musicbrainz.org/release-group/*
 // @match         *://*.musicbrainz.org/series/*
 // @match         *://*.musicbrainz.org/url/*
+// @match         *://*.musicbrainz.org/work/*
 // @match         *://*.musicbrainz.org/dialog*
+// @match         *://*.musicbrainz.eu/area/*
 // @match         *://*.musicbrainz.eu/artist/*
 // @match         *://*.musicbrainz.eu/event/*
+// @match         *://*.musicbrainz.eu/genre/*
+// @match         *://*.musicbrainz.eu/instrument/*
 // @match         *://*.musicbrainz.eu/label/*
 // @match         *://*.musicbrainz.eu/place/*
+// @match         *://*.musicbrainz.eu/recording/*
+// @match         *://*.musicbrainz.eu/release/*
 // @match         *://*.musicbrainz.eu/release-group/*
 // @match         *://*.musicbrainz.eu/series/*
 // @match         *://*.musicbrainz.eu/url/*
+// @match         *://*.musicbrainz.eu/work/*
 // @match         *://*.musicbrainz.eu/dialog*
 // ==/UserScript==
 
@@ -148,6 +160,7 @@
     function fetchURL(url, options) {
         return new Promise((resolve, reject) => {
             GM_xmlhttpRequest({
+                method: "GET",
                 url: url,
                 onload: function (response) {
                     if (400 <= response.status) {
@@ -231,7 +244,7 @@
      * @returns {boolean} True if it's a Wikipedia link
      */
     function isWikipediaLink(link) {
-        return link.match(/^https?:\/\/([a-z]+)\.wikipedia\.org/i) !== null;
+        return link.match(/^https?:\/\/([a-z0-9-]+)\.wikipedia\.org/i) !== null;
     }
 
     /**
@@ -244,12 +257,22 @@
     }
 
     /**
+     * Extracts a Wikidata entity ID from a Wikidata URL.
+     * @param {string} link URL to inspect.
+     * @returns {string | undefined} Uppercase Wikidata entity ID.
+     */
+    function extractWikidataID(link) {
+        const match = link.match(/^https?:\/\/(?:www\.)?wikidata\.org\/wiki\/(Q[0-9]+)(?:$|[?#/])/i);
+        return match ? match[1].toUpperCase() : undefined;
+    }
+
+    /**
      * Extracts the language code and article title from a Wikipedia URL
      * @param {string} wikipediaUrl The full Wikipedia URL
      * @returns {Object} Object containing language and title
      */
     function parseWikipediaUrl(wikipediaUrl) {
-        const match = wikipediaUrl.match(/^https?:\/\/([a-z]+)\.wikipedia\.org\/wiki\/(.+)$/i);
+        const match = wikipediaUrl.match(/^https?:\/\/([a-z0-9-]+)\.wikipedia\.org\/wiki\/([^?#]+)(?:[?#].*)?$/i);
         if (!match) return null;
         
         return {
@@ -363,6 +386,238 @@
         currentSpan.parentElement.parentElement.appendChild(td);
     }
 
+    /**
+     * Waits until a condition returns a truthy value.
+     * @param {Function} condition Condition to evaluate after DOM changes.
+     * @param {string} errorMessage Error used when the timeout is reached.
+     * @param {number} timeout Maximum wait in milliseconds.
+     * @returns {Promise<*>} The truthy value returned by the condition.
+     */
+    function waitForCondition(condition, errorMessage, timeout = 5000) {
+        return new Promise((resolve, reject) => {
+            let timeoutID;
+            const observer = new MutationObserver(() => {
+                const result = condition();
+                if (result) {
+                    clearTimeout(timeoutID);
+                    observer.disconnect();
+                    resolve(result);
+                }
+            });
+            const initialResult = condition();
+            if (initialResult) {
+                resolve(initialResult);
+                return;
+            }
+            observer.observe(document.body, { childList: true, subtree: true, attributes: true });
+            timeoutID = setTimeout(() => {
+                observer.disconnect();
+                reject(new Error(errorMessage));
+            }, timeout);
+        });
+    }
+
+    function getExternalLinkRows() {
+        return Array.from(document.querySelectorAll(
+            "#external-links-editor tr.external-link-item"
+        ));
+    }
+
+    function getActiveWikipediaRows() {
+        return getExternalLinkRows().filter((row) => {
+            const link = row.querySelector("a.url");
+            return link
+                && isWikipediaLink(link.href)
+                && !link.classList.contains("rel-remove");
+        });
+    }
+
+    function getActiveWikidataIDs() {
+        const wikidataIDs = new Set();
+        getExternalLinkRows().forEach((row) => {
+            const link = row.querySelector("a.url");
+            if (!link || link.classList.contains("rel-remove")) {
+                return;
+            }
+            const wikidataID = extractWikidataID(link.href);
+            if (wikidataID) {
+                wikidataIDs.add(wikidataID);
+            }
+        });
+        return wikidataIDs;
+    }
+
+    async function addWikidataLinkToEditPage(wikidataURL) {
+        const wikidataID = extractWikidataID(wikidataURL);
+        if (!wikidataID) {
+            throw new Error("The converted Wikidata URL is invalid");
+        }
+
+        const emptyInput = await waitForCondition(
+            () => Array.from(document.querySelectorAll(
+                '#external-links-editor input.value[type="url"]'
+            )).find((input) => !input.value.trim()),
+            "Could not find the Add another link field"
+        );
+
+        setReactInputValue(emptyInput, wikidataURL);
+        await delay(50);
+
+        const updatedInput = Array.from(document.querySelectorAll(
+            '#external-links-editor input.value[type="url"]'
+        )).find((input) => input.value === wikidataURL) || emptyInput;
+
+        // MusicBrainz submits a newly entered external link when the field loses focus.
+        updatedInput.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+
+        try {
+            return await waitForCondition(
+                () => getExternalLinkRows().find((row) => {
+                    const link = row.querySelector("a.url");
+                    return link
+                        && !link.classList.contains("rel-remove")
+                        && extractWikidataID(link.href) === wikidataID;
+                }),
+                "MusicBrainz did not accept the new Wikidata link",
+                1500
+            );
+        } catch (error) {
+            // Fall back to a real focus change for browsers that do not synthesize focusout.
+            if (updatedInput.isConnected) {
+                updatedInput.focus();
+                updatedInput.blur();
+            }
+            return waitForCondition(
+                () => getExternalLinkRows().find((row) => {
+                    const link = row.querySelector("a.url");
+                    return link
+                        && !link.classList.contains("rel-remove")
+                        && extractWikidataID(link.href) === wikidataID;
+                }),
+                "MusicBrainz did not accept the new Wikidata link"
+            );
+        }
+    }
+
+    async function markWikipediaLinkForRemoval(row) {
+        const removeButton = row.querySelector("td.link-actions > button.remove-item");
+        if (!removeButton) {
+            throw new Error("Could not find the remove button for the Wikipedia link");
+        }
+        removeButton.click();
+        await waitForCondition(
+            () => !row.isConnected || row.querySelector("a.url.rel-remove"),
+            "MusicBrainz did not mark the Wikipedia link for removal"
+        );
+    }
+
+    function displayConverterStatus(container, message, isError = false) {
+        let status = container.querySelector(".wikidata-converter-status");
+        if (!status) {
+            status = document.createElement("p");
+            status.className = "wikidata-converter-status";
+            status.style.margin = "0.5em 0";
+            container.appendChild(status);
+        }
+        status.classList.toggle("error", isError);
+        status.textContent = message;
+    }
+
+    async function convertAllWikipediaLinks(button) {
+        const container = button.parentElement;
+        const wikipediaRows = getActiveWikipediaRows();
+        if (!wikipediaRows.length) {
+            displayConverterStatus(container, "No active Wikipedia links were found.");
+            return;
+        }
+
+        button.disabled = true;
+        button.textContent = `Converting 0/${wikipediaRows.length}…`;
+        displayConverterStatus(container, "Looking up Wikidata links…");
+
+        const lookups = await Promise.all(wikipediaRows.map(async (row) => {
+            const wikipediaLink = row.querySelector("a.url").href;
+            try {
+                const wikidataLink = await getWikidataUrlFromWikipedia(wikipediaLink);
+                return { row, wikipediaLink, wikidataLink };
+            } catch (error) {
+                return { row, wikipediaLink, error };
+            }
+        }));
+
+        const activeWikidataIDs = getActiveWikidataIDs();
+        const errors = [];
+        let converted = 0;
+
+        for (const lookup of lookups) {
+            if (lookup.error) {
+                errors.push(`${lookup.wikipediaLink}: ${lookup.error.message}`);
+                continue;
+            }
+
+            const wikidataID = extractWikidataID(lookup.wikidataLink);
+            try {
+                if (!activeWikidataIDs.has(wikidataID)) {
+                    await addWikidataLinkToEditPage(lookup.wikidataLink);
+                    activeWikidataIDs.add(wikidataID);
+                }
+                await markWikipediaLinkForRemoval(lookup.row);
+                addMessageToEditNote(lookup.wikipediaLink
+                    + " → "
+                    + lookup.wikidataLink);
+                converted++;
+                button.textContent = `Converting ${converted}/${wikipediaRows.length}…`;
+            } catch (error) {
+                errors.push(`${lookup.wikipediaLink}: ${error.message}`);
+            }
+        }
+
+        button.disabled = false;
+        button.textContent = "Convert all Wikipedia links to Wikidata";
+        if (errors.length) {
+            displayConverterStatus(
+                container,
+                `Converted ${converted} link${converted === 1 ? "" : "s"}. `
+                    + `${errors.length} failed: ${errors.join(" | ")}`,
+                true
+            );
+        } else {
+            displayConverterStatus(
+                container,
+                `Converted ${converted} Wikipedia link${converted === 1 ? "" : "s"}.`
+            );
+        }
+    }
+
+    function addConvertAllButtonToEditPage() {
+        const editor = document.querySelector("#external-links-editor");
+        if (!editor || document.querySelector(".wikidata-converter-all-container")) {
+            return;
+        }
+
+        const container = document.createElement("div");
+        container.className = "wikidata-converter-all-container";
+        container.style.marginBottom = "1em";
+
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "styled-button wikidata-converter-all-button";
+        button.textContent = "Convert all Wikipedia links to Wikidata";
+        button.addEventListener("click", () => convertAllWikipediaLinks(button));
+
+        container.appendChild(button);
+        editor.insertAdjacentElement("beforebegin", container);
+    }
+
+    function runOnEntityEditPage() {
+        addConvertAllButtonToEditPage();
+        const observer = new MutationObserver(addConvertAllButtonToEditPage);
+        observer.observe(
+            document.querySelector("#external-links-editor-container") || document.body,
+            { childList: true, subtree: true }
+        );
+    }
+
     function highlightWikipediaLinks() {
         document.querySelectorAll(".external_links .wikipedia-favicon")
             .forEach(function (listItem) {
@@ -466,6 +721,12 @@
         urlInput.insertAdjacentElement("afterend", button);
     }
 
+    function isEntityEditPage() {
+        return document.location.pathname.match(
+            /^\/(area|artist|event|genre|instrument|label|place|recording|release|release-group|series|work)\/[0-9a-f-]{36}\/edit\/?$/i
+        ) !== null;
+    }
+
     const location = document.location.href;
     if (location.match("^https?://((beta|test)\\.)?musicbrainz\\.(org|eu)/dialog")) {
         if ((new URLSearchParams(document.location.search))
@@ -474,6 +735,8 @@
         }
     } else if (location.match("^https?://((beta|test)\\.)?musicbrainz\\.(org|eu)/url")) {
         runOnURLEditPage();
+    } else if (isEntityEditPage()) {
+        runOnEntityEditPage();
     } else {
         runUserscript();
     }
