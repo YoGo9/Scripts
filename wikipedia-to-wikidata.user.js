@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name          MusicBrainz Wikipedia to Wikidata Converter
-// @version       2025.3.7
+// @version       2026.8.2
 // @namespace     https://github.com/YoGo9
 // @author        YoGo9
 // @description   Convert Wikipedia links to their equivalent Wikidata entities
@@ -300,21 +300,27 @@
 
     function fixLinkOnNonURLPage(span) {
         const tableRow = span.parentElement.parentElement;
-        const observer = new MutationObserver(function (mutations, observer) {
-            mutations.forEach(function (mutation) {
-                if (mutation.addedNodes.length > 0
-                    && mutation.addedNodes.item(0).querySelector("div.dialog")) {
-                    setReactInputValue(document.querySelector("div.dialog input.raw-url"), tableRow.getAttribute("newLink"));
-                    document.querySelector("div.dialog button.positive").click();
-                    observer.disconnect();
-                    addMessageToEditNote(tableRow.getAttribute("oldLink")
-                        + " → "
-                        + tableRow.getAttribute("newLink"));
-                }
-            });
+        const observer = new MutationObserver(function () {
+            const dialog = document.querySelector("#url-input-popover");
+            const urlInput = dialog?.querySelector("input.raw-url");
+            const doneButton = dialog?.querySelector("button.positive");
+
+            if (!urlInput || !doneButton) {
+                return;
+            }
+
+            setReactInputValue(urlInput, tableRow.getAttribute("newLink"));
+            observer.disconnect();
+
+            // Let React process the input event before accepting the dialog.
+            setTimeout(function () {
+                doneButton.click();
+                addMessageToEditNote(tableRow.getAttribute("oldLink")
+                    + " → "
+                    + tableRow.getAttribute("newLink"));
+            }, 0);
         });
-        observer.observe(document.querySelector("#url-input-popover-root") || document.body,
-            { childList: true });
+        observer.observe(document.body, { childList: true, subtree: true });
         if (tableRow.getAttribute("newLink")) {
             tableRow.querySelector("td.link-actions > button.edit-item").click();
             return;
