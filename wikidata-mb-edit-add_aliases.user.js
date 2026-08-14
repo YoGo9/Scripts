@@ -4,8 +4,8 @@
 // @name         MusicBrainz edit: Add entity aliases in batch + Wikidata import
 // @namespace    mbz-loujine-yogo
 // @author       loujine + YoGo adaptation
-// @version      2026.08.13
-// @description  Add entity aliases in batch and preview/import aliases from a linked Wikidata item
+// @version      2026.08.14
+// @description  Add entity aliases in batch and preview/import useful labels and aliases from a linked Wikidata item
 // @compatible   firefox+tampermonkey
 // @license      MIT
 // @require      https://raw.githubusercontent.com/loujine/musicbrainz-scripts/master/mbz-loujine-common.js
@@ -154,11 +154,11 @@ function getLinkedWikidataQid(mbEntity) {
     return null;
 }
 
-async function fetchWikidataAliases(qid) {
+async function fetchWikidataNames(qid) {
     const params = new URLSearchParams({
         action: 'wbgetentities',
         ids: qid,
-        props: 'aliases',
+        props: 'labels|aliases',
         format: 'json',
         origin: '*',
     });
@@ -167,47 +167,79 @@ async function fetchWikidataAliases(qid) {
     const data = await response.json();
     const entity = data.entities && data.entities[qid];
     if (!entity || entity.missing !== undefined) throw new Error(`Wikidata item ${qid} was not found.`);
-    return entity.aliases || {};
+    return {
+        labels: entity.labels || {},
+        aliases: entity.aliases || {},
+    };
 }
 
-function buildCandidates(wdAliases, mbEntity) {
+function getMusicBrainzEntityName(mbEntity) {
+    return normalizeName(mbEntity.name || mbEntity.title || '');
+}
+
+function buildCandidates(wdNames, mbEntity) {
     const mbLocales = getMusicBrainzLocales();
     const existing = new Set((mbEntity.aliases || []).map(a => aliasKey(a.name, a.locale || '')));
-    const seen = new Set();
+    const mbName = getMusicBrainzEntityName(mbEntity);
+    const seen = new Map();
     const candidates = [];
 
-    for (const [wdLocale, entries] of Object.entries(wdAliases)) {
+    function addCandidate(name, wdLocale, source) {
+        name = normalizeName(name);
+        if (!name) return;
+
+        // Labels are useful as MusicBrainz aliases only when they actually provide
+        // a different name/script from the entity's main MusicBrainz name.
+        if (source === 'Label' && mbName && name === mbName) return;
+
         const mappedLocale = mapWikidataLocaleToMusicBrainz(wdLocale, mbLocales);
+        const dedupeLocale = mappedLocale === null ? wdLocale : mappedLocale;
+        const key = aliasKey(name, dedupeLocale);
+
+        // If the same Wikidata name occurs as both a label and an alias for the
+        // same locale, show/import it once and identify both sources.
+        if (seen.has(key)) {
+            const previous = seen.get(key);
+            if (!previous.source.includes(source)) previous.source += ` + ${source}`;
+            return;
+        }
+
+        let status = 'new';
+        let reason = '';
+        if (mappedLocale === null) {
+            status = 'unsupported';
+            reason = `MusicBrainz does not offer locale “${wdLocale}”`;
+        } else if (existing.has(aliasKey(name, mappedLocale))) {
+            status = 'existing';
+            reason = 'Already exists in MusicBrainz';
+        }
+
+        const candidate = {
+            name,
+            wdLocale,
+            mbLocale: mappedLocale,
+            source,
+            status,
+            reason,
+        };
+        seen.set(key, candidate);
+        candidates.push(candidate);
+    }
+
+    for (const [wdLocale, entry] of Object.entries(wdNames.labels || {})) {
+        if (entry && entry.value) addCandidate(entry.value, wdLocale, 'Label');
+    }
+
+    for (const [wdLocale, entries] of Object.entries(wdNames.aliases || {})) {
         for (const entry of entries || []) {
-            const name = normalizeName(entry.value);
-            if (!name) continue;
-
-            const mappedKey = aliasKey(name, mappedLocale === null ? wdLocale : mappedLocale);
-            if (seen.has(mappedKey)) continue;
-            seen.add(mappedKey);
-
-            let status = 'new';
-            let reason = '';
-            if (mappedLocale === null) {
-                status = 'unsupported';
-                reason = `MusicBrainz does not offer locale “${wdLocale}”`;
-            } else if (existing.has(aliasKey(name, mappedLocale))) {
-                status = 'existing';
-                reason = 'Already exists in MusicBrainz';
-            }
-
-            candidates.push({
-                name,
-                wdLocale,
-                mbLocale: mappedLocale,
-                status,
-                reason,
-            });
+            if (entry && entry.value) addCandidate(entry.value, wdLocale, 'Alias');
         }
     }
 
     candidates.sort((a, b) =>
-        a.wdLocale.localeCompare(b.wdLocale) || a.name.localeCompare(b.name)
+        a.wdLocale.localeCompare(b.wdLocale) ||
+        a.name.localeCompare(b.name) ||
+        a.source.localeCompare(b.source)
     );
     return candidates;
 }
@@ -246,6 +278,7 @@ function showPreview(qid, candidates) {
               <td style="text-align:center"><input class="wdAliasChoice" data-index="${index}" type="checkbox" ${selectable ? 'checked' : 'disabled'}></td>
               <td>${escapeHTML(item.name)}</td>
               <td>${escapeHTML(localeDisplay)}</td>
+              <td>${escapeHTML(item.source)}</td>
               <td>${escapeHTML(statusText)}</td>
             </tr>`;
     }).join('');
@@ -254,7 +287,7 @@ function showPreview(qid, candidates) {
       <div style="background:#fff;color:#222;max-width:1000px;width:100%;border-radius:8px;box-shadow:0 8px 30px rgba(0,0,0,.35);padding:18px;">
         <div style="display:flex;justify-content:space-between;gap:20px;align-items:start;">
           <div>
-            <h2 style="margin:0 0 6px">Import aliases from Wikidata</h2>
+            <h2 style="margin:0 0 6px">Import names from Wikidata</h2>
             <div><strong>${escapeHTML(qid)}</strong> — ${newCount} new, ${existingCount} already in MusicBrainz, ${unsupportedCount} unsupported locale(s)</div>
           </div>
           <button type="button" id="wdAliasClose" style="font-size:20px;line-height:1">×</button>
@@ -267,8 +300,8 @@ function showPreview(qid, candidates) {
 
         <div style="max-height:60vh;overflow:auto;border:1px solid #bbb;">
           <table class="tbl" style="margin:0;width:100%">
-            <thead><tr><th>Add</th><th>Alias</th><th>Locale</th><th>Status</th></tr></thead>
-            <tbody>${rows || '<tr><td colspan="4">Wikidata returned no aliases.</td></tr>'}</tbody>
+            <thead><tr><th>Add</th><th>Name</th><th>Locale</th><th>Source</th><th>Status</th></tr></thead>
+            <tbody>${rows || '<tr><td colspan="5">Wikidata returned no useful labels or aliases.</td></tr>'}</tbody>
           </table>
         </div>
 
@@ -301,7 +334,7 @@ function showPreview(qid, candidates) {
         }
         close();
         const status = document.getElementById('wdAliasImportStatus');
-        if (status) status.textContent = `Added ${selected.length} Wikidata alias${selected.length === 1 ? '' : 'es'} to the batch. Review them, then submit.`;
+        if (status) status.textContent = `Added ${selected.length} Wikidata name${selected.length === 1 ? '' : 's'} to the batch. Review them, then submit.`;
     });
 }
 
@@ -316,10 +349,10 @@ async function importFromWikidata() {
         const qid = getLinkedWikidataQid(mbEntity);
         if (!qid) throw new Error('This MusicBrainz entity does not have a linked Wikidata item.');
 
-        status.textContent = `Loading aliases from ${qid}…`;
-        const wdAliases = await fetchWikidataAliases(qid);
-        const candidates = buildCandidates(wdAliases, mbEntity);
-        status.textContent = `Loaded ${candidates.length} alias${candidates.length === 1 ? '' : 'es'} from ${qid}.`;
+        status.textContent = `Loading labels and aliases from ${qid}…`;
+        const wdNames = await fetchWikidataNames(qid);
+        const candidates = buildCandidates(wdNames, mbEntity);
+        status.textContent = `Loaded ${candidates.length} useful Wikidata name${candidates.length === 1 ? '' : 's'} from ${qid}.`;
         showPreview(qid, candidates);
     } catch (error) {
         console.error(error);
