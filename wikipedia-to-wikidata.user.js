@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name          MusicBrainz Wikipedia to Wikidata Converter
-// @version       2026.8.2.1
+// @version       2026.8.19
 // @namespace     https://github.com/YoGo9
 // @author        YoGo9
 // @description   Convert Wikipedia links to their equivalent Wikidata entities
@@ -15,12 +15,9 @@
 // @match         *://*.musicbrainz.org/area/*
 // @match         *://*.musicbrainz.org/artist/*
 // @match         *://*.musicbrainz.org/event/*
-// @match         *://*.musicbrainz.org/genre/*
 // @match         *://*.musicbrainz.org/instrument/*
 // @match         *://*.musicbrainz.org/label/*
 // @match         *://*.musicbrainz.org/place/*
-// @match         *://*.musicbrainz.org/recording/*
-// @match         *://*.musicbrainz.org/release/*
 // @match         *://*.musicbrainz.org/release-group/*
 // @match         *://*.musicbrainz.org/series/*
 // @match         *://*.musicbrainz.org/url/*
@@ -29,12 +26,9 @@
 // @match         *://*.musicbrainz.eu/area/*
 // @match         *://*.musicbrainz.eu/artist/*
 // @match         *://*.musicbrainz.eu/event/*
-// @match         *://*.musicbrainz.eu/genre/*
 // @match         *://*.musicbrainz.eu/instrument/*
 // @match         *://*.musicbrainz.eu/label/*
 // @match         *://*.musicbrainz.eu/place/*
-// @match         *://*.musicbrainz.eu/recording/*
-// @match         *://*.musicbrainz.eu/release/*
 // @match         *://*.musicbrainz.eu/release-group/*
 // @match         *://*.musicbrainz.eu/series/*
 // @match         *://*.musicbrainz.eu/url/*
@@ -44,6 +38,18 @@
 
 (function () {
     'use strict';
+
+    /**
+     * Entity types that support a Wikipedia (and therefore Wikidata) URL relationship.
+     * Single source of truth for the @match block, the create dialog, and isEntityEditPage.
+     * Excludes genre (Wikidata-only, no Wikipedia), recording, and release, which have no
+     * Wikipedia relationship. See https://musicbrainz.org/relationships for coverage per type.
+     */
+    const WIKIPEDIA_ENTITY_TYPES = [
+        'area', 'artist', 'event', 'instrument',
+        'label', 'place', 'release-group', 'series', 'work'
+    ];
+    const WIKIPEDIA_ENTITY_ALTERNATION = WIKIPEDIA_ENTITY_TYPES.join('|');
 
     // Adapted from https://stackoverflow.com/a/46012210
     const nativeInputValueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
@@ -722,15 +728,15 @@
     }
 
     function isEntityEditPage() {
-        return document.location.pathname.match(
-            /^\/(area|artist|event|genre|instrument|label|place|recording|release|release-group|series|work)\/[0-9a-f-]{36}\/edit\/?$/i
-        ) !== null;
+        return new RegExp(
+            `^/(${WIKIPEDIA_ENTITY_ALTERNATION})/[0-9a-f-]{36}/edit/?$`, 'i'
+        ).test(document.location.pathname);
     }
 
     const location = document.location.href;
     if (location.match("^https?://((beta|test)\\.)?musicbrainz\\.(org|eu)/dialog")) {
-        if ((new URLSearchParams(document.location.search))
-            .get("path").match("^/(artist|event|label|place|release-group|series)/create")) {
+        const dialogPath = new URLSearchParams(document.location.search).get("path");
+        if (dialogPath && new RegExp(`^/(${WIKIPEDIA_ENTITY_ALTERNATION})/create`).test(dialogPath)) {
             runUserscript();
         }
     } else if (location.match("^https?://((beta|test)\\.)?musicbrainz\\.(org|eu)/url")) {
