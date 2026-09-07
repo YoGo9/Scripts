@@ -3,7 +3,7 @@
 // @namespace   http://tampermonkey.net/
 // @downloadURL https://github.com/YoGo9/Scripts/raw/main/HarmonyRelationshipSeeder.user.js
 // @updateURL   https://github.com/YoGo9/Scripts/raw/main/HarmonyRelationshipSeeder.user.js
-// @version     1.9.2
+// @version     1.9.3
 // @tag         ai-created
 // @description Generate MusicBrainz relationship seeder URLs from Harmony streaming links.
 // @author      YoGo9
@@ -12,14 +12,24 @@
 // @match       https://harmony.pulsewidth.org.uk/release/*/actions*
 // @match       https://harmony.mybrainz.dev/release/actions*
 // @match       https://harmony.mybrainz.dev/release/*/actions*
-// @grant       none
-// @run-at      document-end
+// @match       https://musicbrainz.org/release/*/edit-relationships*
+// @match       https://*.musicbrainz.org/release/*/edit-relationships*
+// @grant       GM_getValue
+// @grant       GM_setValue
+// @run-at      document-start
 // ==/UserScript==
 
 (function () {
   'use strict';
 
-  const INJECT_MARK = 'hrs-injected-v19';
+  const INJECT_MARK = 'hrs-injected-v193';
+  const RELAY_PARAM = 'hrs-seed-token';
+  const SEED_HASH_PARAM = 'seed-urls-v1';
+  const PENDING_KEY = 'hrs-pending-seeds-v1';
+  const PENDING_MAX_AGE = 24 * 60 * 60 * 1000;
+  const PENDING_MAX_COUNT = 100;
+  const VERIFY_TITLE_RE = /^\s*Verifying your browser\s*$/i;
+  const VERIFY_NOSCRIPT_RE = /JavaScript is required to access this page/i;
 
   const serviceMap = {
     spotify:  { name: 'Spotify',    color: '#1DB954' },
@@ -65,14 +75,33 @@
     '976': 'secondhandsongs',
   };
 
-  // --- bootstrap & re-run on SPA-ish updates ---
+  // MusicBrainz's proof-of-work page redirects with pathname + search, but
+  // drops the hash. Relay the seed through a short query token and restore the
+  // original hash only after the real relationship editor has been served.
+  if (isMusicBrainz()) {
+    relayPendingSeedOnMusicBrainz();
+    return;
+  }
+
+  // --- bootstrap & re-run on SPA-ish Harmony updates ---
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
   } else {
     init();
   }
-  const mo = new MutationObserver(() => init());
-  mo.observe(document.documentElement, { childList: true, subtree: true });
+
+  observeHarmonyUpdates();
+
+  function observeHarmonyUpdates() {
+    const start = () => {
+      if (!document.documentElement) return;
+      const mo = new MutationObserver(() => init());
+      mo.observe(document.documentElement, { childList: true, subtree: true });
+    };
+
+    if (document.documentElement) start();
+    else document.addEventListener('DOMContentLoaded', start, { once: true });
+  }
 
   function init() {
     // only inject once per render "area"
@@ -345,7 +374,112 @@
   }
 
   function buildSeederUrl(releaseMbid, seederData) {
-    const encoded = encodeURIComponent(JSON.stringify(seederData));
-    return `https://musicbrainz.org/release/${releaseMbid}/edit-relationships#seed-urls-v1=${encoded}`;
+    const token = savePendingSeed(seederData);
+    const url = new URL(`https://musicbrainz.org/release/${releaseMbid}/edit-relationships`);
+    url.searchParams.set(RELAY_PARAM, token);
+    return url.href;
+  }
+
+  // --- proof-of-work-safe seed relay ---
+
+  function isMusicBrainz() {
+    return location.hostname === 'musicbrainz.org' || location.hostname.endsWith('.musicbrainz.org');
+  }
+
+  function newToken() {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+    return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+  }
+
+  function readPendingSeeds() {
+    const value = GM_getValue(PENDING_KEY, {});
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  }
+
+  function prunePendingSeeds(pending, maxCount = PENDING_MAX_COUNT) {
+    const cutoff = Date.now() - PENDING_MAX_AGE;
+    const live = Object.entries(pending)
+      .filter(([, entry]) => entry && typeof entry.payload === 'string' && entry.createdAt >= cutoff)
+      .sort((a, b) => b[1].createdAt - a[1].createdAt)
+      .slice(0, maxCount);
+    return Object.fromEntries(live);
+  }
+
+  function savePendingSeed(seederData) {
+    const token = newToken();
+    const pending = prunePendingSeeds(readPendingSeeds(), PENDING_MAX_COUNT - 1);
+    pending[token] = {
+      createdAt: Date.now(),
+      payload: JSON.stringify(seederData),
+    };
+    GM_setValue(PENDING_KEY, pending);
+    return token;
+  }
+
+  function isVerifyInterstitial(doc = document) {
+    try {
+      if (VERIFY_TITLE_RE.test(doc.title || '')) return true;
+      return Array.from(doc.querySelectorAll('noscript'))
+        .some(node => VERIFY_NOSCRIPT_RE.test(node.textContent || ''));
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function relayPendingSeedOnMusicBrainz() {
+    const initialUrl = new URL(location.href);
+    const token = initialUrl.searchParams.get(RELAY_PARAM);
+    if (!token) return;
+
+    let observer = null;
+
+    const stop = () => {
+      if (observer) observer.disconnect();
+    };
+
+    const attemptRelay = () => {
+      // The verification document will shortly navigate to the same path and
+      // query. Do not consume the token or mutate the URL on this page.
+      if (isVerifyInterstitial()) {
+        console.info('[Harmony Seeder] MusicBrainz verification challenge detected; preserving the pending seed for the real page.');
+        stop();
+        return true;
+      }
+
+      // At document-start the title may not have been parsed yet. A non-empty
+      // title (or a finished document) lets us distinguish the real page from
+      // the known verification interstitial without false-positive script scans.
+      if (!(document.title || '').trim() && document.readyState === 'loading') return false;
+
+      const pending = prunePendingSeeds(readPendingSeeds());
+      const entry = pending[token];
+      if (!entry) {
+        console.error('[Harmony Seeder] The pending seed payload is missing or expired. Return to Harmony and generate the link again.');
+        stop();
+        return true;
+      }
+
+      const relayUrl = new URL(location.href);
+      const hashParams = new URLSearchParams(relayUrl.hash.slice(1));
+      hashParams.set(SEED_HASH_PARAM, entry.payload);
+      relayUrl.searchParams.delete(RELAY_PARAM);
+      relayUrl.hash = hashParams.toString();
+
+      history.replaceState(history.state, '', relayUrl.href);
+
+      delete pending[token];
+      GM_setValue(PENDING_KEY, pending);
+      console.info('[Harmony Seeder] Restored the relationship seed after MusicBrainz verification.');
+      stop();
+      return true;
+    };
+
+    if (attemptRelay()) return;
+
+    observer = new MutationObserver(() => attemptRelay());
+    observer.observe(document.documentElement || document, { childList: true, subtree: true });
+    document.addEventListener('DOMContentLoaded', attemptRelay, { once: true });
   }
 })();
