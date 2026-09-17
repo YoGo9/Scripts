@@ -11,7 +11,7 @@
 // @name         Batch Add Recording Aliases from another Release
 // @namespace    YoGo9
 // @author       YoGo9
-// @version      2026.09.15
+// @version      2026.09.17
 // @description  Copy track titles from another MusicBrainz release to recording aliases on the current release.
 // @homepage     https://github.com/YoGo9/Scripts
 // @updateURL    https://raw.githubusercontent.com/YoGo9/Scripts/main/BatchAddRecordingAliases.user.js
@@ -132,8 +132,9 @@ if (!/^\/release\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
         display: none;
         margin: 8px 0 12px;
         padding: 8px 10px;
-        border: 1px solid #d8d8d8;
-        background: #fafafa;
+        border: 1px solid rgba(127, 127, 127, .32);
+        background: transparent;
+        color: inherit;
         font-size: 13px;
       }
 
@@ -185,7 +186,7 @@ if (!/^\/release\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
         margin-top: 6px;
         max-height: 330px;
         overflow: auto;
-        border-top: 1px solid #ddd;
+        border-top: 1px solid rgba(127, 127, 127, .28);
       }
 
       #yomo-table-wrap.yomo-visible {
@@ -228,7 +229,7 @@ if (!/^\/release\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
       }
 
       #yomo-table tr.yomo-failed {
-        background: #fff2f2;
+        background: rgba(164, 0, 0, .08);
       }
 
       .yomo-row-error {
@@ -238,6 +239,30 @@ if (!/^\/release\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
       #yomo-type-wrap select {
         max-width: 145px;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        #yomo-alias-panel {
+          border-color: rgba(220, 220, 220, .24);
+          background: transparent;
+        }
+
+        #yomo-table-wrap {
+          border-top-color: rgba(220, 220, 220, .18);
+        }
+
+        #yomo-summary.yomo-error,
+        .yomo-row-error {
+          color: #ff9b9b;
+        }
+
+        #yomo-summary.yomo-warning {
+          color: #e0ba67;
+        }
+
+        #yomo-table tr.yomo-failed {
+          background: rgba(255, 120, 120, .08);
+        }
       }
 
       @media (max-width: 700px) {
