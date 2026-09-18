@@ -4,15 +4,15 @@
  * MIT License
  */
 
-/* global $ helper edits sidebar requests GM_info aliases */
+/* global $ helper edits requests aliases */
 'use strict';
 
 // ==UserScript==
 // @name         Batch Add Recording Aliases from another Release
 // @namespace    YoGo9
 // @author       YoGo9
-// @version      12/26/25
-// @description  Paste a source release URL/MBID; copy its track titles as recording aliases on the current (target) release's recordings.
+// @version      2026.09.17
+// @description  Copy track titles from another MusicBrainz release to recording aliases on the current release.
 // @homepage     https://github.com/YoGo9/Scripts
 // @updateURL    https://raw.githubusercontent.com/YoGo9/Scripts/main/BatchAddRecordingAliases.user.js
 // @downloadURL  https://raw.githubusercontent.com/YoGo9/Scripts/main/BatchAddRecordingAliases.user.js
@@ -23,12 +23,10 @@
 // @grant        GM_info
 // @run-at       document-end
 // ==/UserScript==
-'use strict';
 
 if (!/^\/release\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(location.pathname)) {
   return;
 }
-
 
 (function () {
   const HOST = location.origin;
@@ -51,18 +49,26 @@ if (!/^\/release\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
   async function wsRelease(releaseMbid) {
     const url = `${WS_HOST}/ws/2/release/${releaseMbid}?inc=recordings+media&fmt=json`;
-    const r = await fetch(url, { headers: { Accept: 'application/json' } });
-    if (!r.ok) throw new Error(`WS fetch failed ${r.status} for release ${releaseMbid}`);
+    const r = await fetch(url, {
+      headers: { Accept: 'application/json' },
+    });
+
+    if (!r.ok) {
+      throw new Error(`MusicBrainz returned HTTP ${r.status}`);
+    }
+
     return r.json();
   }
 
   function flattenTracks(releaseJson) {
     const out = [];
+
     for (const medium of (releaseJson.media || [])) {
-      const mPos = medium.position;
+      const mediumPosition = medium.position;
+
       for (const track of (medium.tracks || [])) {
         out.push({
-          mediumPosition: mPos,
+          mediumPosition,
           trackPosition: track.position,
           trackTitle: track.title,
           recordingMbid: track.recording?.id || null,
@@ -70,130 +76,448 @@ if (!/^\/release\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
         });
       }
     }
+
     return out;
   }
 
   function mapByRecording(tracks) {
-    const m = new Map();
-    for (const t of tracks) {
-      if (t.recordingMbid) m.set(t.recordingMbid, t.trackTitle);
+    const map = new Map();
+
+    for (const track of tracks) {
+      if (track.recordingMbid) {
+        map.set(track.recordingMbid, track.trackTitle);
+      }
     }
-    return m;
+
+    return map;
   }
 
   function mapByPosition(tracks) {
-    const m = new Map();
-    for (const t of tracks) {
-      m.set(`${t.mediumPosition}-${t.trackPosition}`, t.trackTitle);
+    const map = new Map();
+
+    for (const track of tracks) {
+      map.set(
+        `${track.mediumPosition}-${track.trackPosition}`,
+        track.trackTitle
+      );
     }
-    return m;
+
+    return map;
   }
 
-  function esc(s) {
-    return String(s ?? '').replace(/[&<>"']/g, c => (
-      { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
-    ));
+  function esc(value) {
+    return String(value ?? '').replace(/[&<>"']/g, char => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;',
+    })[char]);
   }
 
   function editNote(sourceReleaseUrl) {
     return `Batch Add Recording Alias from release ${sourceReleaseUrl}`;
   }
 
-  function injectUI() {
-    const box = document.createElement('div');
-    box.style.border = '1px solid #ccc';
-    box.style.padding = '10px';
-    box.style.margin = '10px 0';
-    box.style.background = '#fff';
+  function injectStyles() {
+    const style = document.createElement('style');
 
-    box.innerHTML = `
-      <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-        <span style="font-weight:600;">Copy track titles → recording aliases</span>
+    style.textContent = `
+      #yomo-alias-launch {
+        margin-left: .5em;
+        white-space: nowrap;
+      }
 
-        <input id="yomo-src" style="width:520px; max-width:100%;" placeholder="Paste SOURCE release URL or MBID">
+      #yomo-alias-panel {
+        display: none;
+        margin: 8px 0 12px;
+        padding: 8px 10px;
+        border: 1px solid rgba(127, 127, 127, .32);
+        background: transparent;
+        color: inherit;
+        font-size: 13px;
+      }
 
-        <label style="display:flex; gap:6px; align-items:center;">
-          Type:
+      #yomo-alias-panel.yomo-open {
+        display: block;
+      }
+
+      #yomo-alias-panel .yomo-line {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        flex-wrap: wrap;
+      }
+
+      #yomo-alias-panel .yomo-line + .yomo-line {
+        margin-top: 6px;
+      }
+
+      #yomo-src {
+        flex: 1 1 420px;
+        min-width: 220px;
+        max-width: 720px;
+      }
+
+      #yomo-locale {
+        width: 54px;
+      }
+
+      #yomo-summary {
+        min-height: 18px;
+        margin-top: 6px;
+      }
+
+      #yomo-summary.yomo-error,
+      .yomo-row-error {
+        color: #a40000;
+      }
+
+      #yomo-summary.yomo-warning {
+        color: #9a6700;
+      }
+
+      #yomo-actions {
+        margin-left: auto;
+      }
+
+      #yomo-table-wrap {
+        display: none;
+        margin-top: 6px;
+        max-height: 330px;
+        overflow: auto;
+        border-top: 1px solid rgba(127, 127, 127, .28);
+      }
+
+      #yomo-table-wrap.yomo-visible {
+        display: block;
+      }
+
+      #yomo-table {
+        width: 100%;
+        margin-top: 5px;
+      }
+
+      #yomo-table th,
+      #yomo-table td {
+        padding: 3px 5px;
+        vertical-align: top;
+      }
+
+      #yomo-table th:first-child,
+      #yomo-table td:first-child {
+        width: 24px;
+        text-align: center;
+      }
+
+      #yomo-table .yomo-disc,
+      #yomo-table .yomo-track {
+        width: 44px;
+        white-space: nowrap;
+      }
+
+      #yomo-table .yomo-recording {
+        width: 43%;
+      }
+
+      #yomo-table .yomo-alias {
+        width: 43%;
+      }
+
+      #yomo-table tr.yomo-done {
+        opacity: .55;
+      }
+
+      #yomo-table tr.yomo-failed {
+        background: rgba(164, 0, 0, .08);
+      }
+
+      .yomo-row-error {
+        margin-top: 2px;
+        font-size: 11px;
+      }
+
+      #yomo-type-wrap select {
+        max-width: 145px;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        #yomo-alias-panel {
+          border-color: rgba(220, 220, 220, .24);
+          background: transparent;
+        }
+
+        #yomo-table-wrap {
+          border-top-color: rgba(220, 220, 220, .18);
+        }
+
+        #yomo-summary.yomo-error,
+        .yomo-row-error {
+          color: #ff9b9b;
+        }
+
+        #yomo-summary.yomo-warning {
+          color: #e0ba67;
+        }
+
+        #yomo-table tr.yomo-failed {
+          background: rgba(255, 120, 120, .08);
+        }
+      }
+
+      @media (max-width: 700px) {
+        #yomo-actions {
+          margin-left: 0;
+        }
+
+        #yomo-alias-panel {
+          padding: 7px;
+        }
+
+        #yomo-table .yomo-recording,
+        #yomo-table .yomo-alias {
+          width: auto;
+        }
+      }
+    `;
+
+    document.head.appendChild(style);
+  }
+
+  function findTabs() {
+    return (
+      document.querySelector('#content ul.tabs') ||
+      document.querySelector('ul.tabs')
+    );
+  }
+
+  function injectLauncherAndPanel() {
+    injectStyles();
+
+    const tabs = findTabs();
+    const content = document.querySelector('#content') || document.body;
+
+    const launch = document.createElement('button');
+    launch.id = 'yomo-alias-launch';
+    launch.type = 'button';
+    launch.textContent = 'Recording aliases';
+
+    let panelAnchor;
+
+    if (tabs) {
+      const li = document.createElement('li');
+      li.style.float = 'right';
+      li.style.marginLeft = '6px';
+      li.appendChild(launch);
+      tabs.appendChild(li);
+      panelAnchor = tabs;
+    } else {
+      const fallback = document.createElement('div');
+      fallback.style.textAlign = 'right';
+      fallback.style.margin = '4px 0';
+      fallback.appendChild(launch);
+      content.prepend(fallback);
+      panelAnchor = fallback;
+    }
+
+    const panel = document.createElement('div');
+    panel.id = 'yomo-alias-panel';
+
+    panel.innerHTML = `
+      <div class="yomo-line">
+        <strong>Source release</strong>
+        <input
+          id="yomo-src"
+          type="text"
+          placeholder="MusicBrainz release URL or MBID"
+          autocomplete="off"
+        >
+        <button id="yomo-preview" type="button">Preview</button>
+      </div>
+
+      <div class="yomo-line">
+        <label>
+          Type
           <span id="yomo-type-wrap">${aliases.type}</span>
         </label>
 
-        <label style="display:flex; gap:6px; align-items:center;">
-          Locale:
-          <input id="yomo-locale" style="width:70px;" value="en">
+        <label>
+          Locale
+          <input id="yomo-locale" type="text" value="en">
         </label>
 
-        <label style="display:flex; gap:6px; align-items:center;">
+        <label>
           <input id="yomo-primary" type="checkbox">
-          Primary
+          Primary for locale
         </label>
 
-        <button id="yomo-preview" type="button">Preview</button>
-        <button id="yomo-submit" type="button" disabled>Submit</button>
+        <span id="yomo-actions">
+          <button id="yomo-submit" type="button" disabled>Submit selected</button>
+        </span>
       </div>
 
-      <div id="yomo-status" style="margin-top:8px; white-space:pre-wrap;"></div>
-      <div id="yomo-table" style="margin-top:8px; max-height:320px; overflow:auto;"></div>
+      <div id="yomo-summary"></div>
+      <div id="yomo-table-wrap"></div>
     `;
 
-    (document.querySelector('#content') || document.body).prepend(box);
+    panelAnchor.insertAdjacentElement('afterend', panel);
 
-    // Ensure the select has a stable ID we can read
-    const typeSel = box.querySelector('#yomo-type-wrap select');
-    if (typeSel) typeSel.id = 'yomo-type';
+    const typeSelect = panel.querySelector('#yomo-type-wrap select');
+    if (typeSelect) {
+      typeSelect.id = 'yomo-type';
+    }
 
-    return box;
+    launch.addEventListener('click', () => {
+      const open = panel.classList.toggle('yomo-open');
+      launch.textContent = open ? 'Recording aliases ▴' : 'Recording aliases';
+    });
+
+    return { launch, panel };
   }
 
-  function setStatus(msg) {
-    const el = document.getElementById('yomo-status');
-    if (el) el.textContent = msg;
+  function setSummary(message, kind = '') {
+    const el = document.getElementById('yomo-summary');
+    if (!el) return;
+
+    el.className = '';
+    if (kind) el.classList.add(`yomo-${kind}`);
+    el.textContent = message || '';
+  }
+
+  function selectedIndexes() {
+    return Array.from(
+      document.querySelectorAll('#yomo-table tbody input.yomo-row-check:checked')
+    ).map(input => Number(input.dataset.idx));
+  }
+
+  function updateSubmitButton() {
+    const button = document.getElementById('yomo-submit');
+    if (!button) return;
+
+    const count = selectedIndexes().length;
+    button.disabled = count === 0;
+    button.textContent = count ? `Submit selected (${count})` : 'Submit selected';
   }
 
   function render(rows) {
-    const wrap = document.getElementById('yomo-table');
+    const wrap = document.getElementById('yomo-table-wrap');
     if (!wrap) return;
 
+    if (!rows.length) {
+      wrap.classList.remove('yomo-visible');
+      wrap.innerHTML = '';
+      updateSubmitButton();
+      return;
+    }
+
     wrap.innerHTML = `
-      <table class="tbl" style="width:100%;">
+      <table id="yomo-table" class="tbl">
         <thead>
           <tr>
-            <th>Medium</th>
-            <th>#</th>
-            <th>Recording</th>
-            <th>Alias</th>
-            <th>Status</th>
+            <th>
+              <input
+                id="yomo-check-all"
+                type="checkbox"
+                checked
+                title="Select all"
+              >
+            </th>
+            <th class="yomo-disc">Disc</th>
+            <th class="yomo-track">Track</th>
+            <th class="yomo-recording">Recording</th>
+            <th class="yomo-alias">Alias to add</th>
           </tr>
         </thead>
+
         <tbody>
-          ${rows.map((r, i) => `
-            <tr data-idx="${i}">
-              <td>${esc(r.mediumPosition)}</td>
-              <td>${esc(r.trackPosition)}</td>
+          ${rows.map((row, index) => `
+            <tr data-idx="${index}">
               <td>
-                <a href="${HOST}/recording/${r.recordingMbid}" target="_blank" rel="noreferrer noopener">
-                  ${esc(r.recordingTitle || '(recording)')}
-                </a>
-                <div style="opacity:.65; font-size:11px;">${esc(r.recordingMbid)}</div>
+                <input
+                  class="yomo-row-check"
+                  type="checkbox"
+                  data-idx="${index}"
+                  checked
+                >
               </td>
-              <td>${esc(r.aliasName)}</td>
-              <td class="st" title="${esc(r.matchType)}"></td>
+
+              <td class="yomo-disc">${esc(row.mediumPosition)}</td>
+              <td class="yomo-track">${esc(row.trackPosition)}</td>
+
+              <td class="yomo-recording">
+                <a
+                  href="${HOST}/recording/${esc(row.recordingMbid)}"
+                  target="_blank"
+                  rel="noreferrer noopener"
+                >${esc(row.recordingTitle || '(recording)')}</a>
+              </td>
+
+              <td class="yomo-alias">
+                <span>${esc(row.aliasName)}</span>
+                <div class="yomo-row-error"></div>
+              </td>
             </tr>
           `).join('')}
         </tbody>
       </table>
     `;
+
+    wrap.classList.add('yomo-visible');
+
+    const checkAll = wrap.querySelector('#yomo-check-all');
+    const rowChecks = Array.from(
+      wrap.querySelectorAll('input.yomo-row-check')
+    );
+
+    checkAll.addEventListener('change', () => {
+      for (const checkbox of rowChecks) {
+        if (!checkbox.disabled) {
+          checkbox.checked = checkAll.checked;
+        }
+      }
+      updateSubmitButton();
+    });
+
+    for (const checkbox of rowChecks) {
+      checkbox.addEventListener('change', () => {
+        const activeChecks = rowChecks.filter(cb => !cb.disabled);
+        const checkedCount = activeChecks.filter(cb => cb.checked).length;
+
+        checkAll.checked =
+          activeChecks.length > 0 &&
+          checkedCount === activeChecks.length;
+
+        checkAll.indeterminate =
+          checkedCount > 0 &&
+          checkedCount < activeChecks.length;
+
+        updateSubmitButton();
+      });
+    }
+
+    updateSubmitButton();
   }
 
-  function submitOneAlias({ recordingMbid, aliasName, locale, primary, typeId, sourceUrl }, onOk, onFail) {
+  function submitOneAlias(
+    {
+      recordingMbid,
+      aliasName,
+      locale,
+      primary,
+      typeId,
+      sourceUrl,
+    },
+    onOk,
+    onFail
+  ) {
     const postData = {
       name: edits.encodeName(aliasName),
       sort_name: edits.encodeName(aliasName),
-      locale: locale,
+      locale,
       primary_for_locale: primary ? 1 : 0,
       edit_note: editNote(sourceUrl),
     };
 
-    // Only send type_id if the user selected one (blank means default)
     if (typeId) {
       postData.type_id = typeId;
     }
@@ -208,96 +532,176 @@ if (!/^\/release\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
   async function buildRows(sourceInput) {
     const srcMbid = parseReleaseMbid(sourceInput);
-    if (!srcMbid) throw new Error('Could not parse SOURCE release MBID from input.');
+
+    if (!srcMbid) {
+      throw new Error('Could not read a source release MBID.');
+    }
 
     const tgtMbid = currentReleaseMbid();
-    if (!tgtMbid) throw new Error('Could not parse TARGET release MBID from current page.');
 
-    const srcUrlNormalized = sourceInput.trim().startsWith('http')
+    if (!tgtMbid) {
+      throw new Error('Could not read the current release MBID.');
+    }
+
+    const sourceUrl = sourceInput.trim().startsWith('http')
       ? sourceInput.trim()
       : `${HOST}/release/${srcMbid}`;
 
-    setStatus('Fetching releases from WS…');
-    const [src, tgt] = await Promise.all([wsRelease(srcMbid), wsRelease(tgtMbid)]);
+    const [sourceRelease, targetRelease] = await Promise.all([
+      wsRelease(srcMbid),
+      wsRelease(tgtMbid),
+    ]);
 
-    const srcTracks = flattenTracks(src);
-    const tgtTracks = flattenTracks(tgt);
+    const sourceTracks = flattenTracks(sourceRelease);
+    const targetTracks = flattenTracks(targetRelease);
 
-    const byRec = mapByRecording(srcTracks);
-    const byPos = mapByPosition(srcTracks);
+    const byRecording = mapByRecording(sourceTracks);
+    const byPosition = mapByPosition(sourceTracks);
 
     const rows = [];
-    for (const t of tgtTracks) {
-      if (!t.recordingMbid) continue;
+    let unmatched = 0;
 
-      let aliasName = byRec.get(t.recordingMbid);
+    for (const track of targetTracks) {
+      if (!track.recordingMbid) {
+        unmatched += 1;
+        continue;
+      }
+
+      let aliasName = byRecording.get(track.recordingMbid);
       let matchType = 'recording';
 
-      // Fallback if recordings differ (not ideal but better than nothing)
       if (!aliasName) {
-        aliasName = byPos.get(`${t.mediumPosition}-${t.trackPosition}`);
+        aliasName = byPosition.get(
+          `${track.mediumPosition}-${track.trackPosition}`
+        );
         matchType = aliasName ? 'position' : 'none';
       }
 
-      if (!aliasName) continue;
+      if (!aliasName) {
+        unmatched += 1;
+        continue;
+      }
 
       rows.push({
-        mediumPosition: t.mediumPosition,
-        trackPosition: t.trackPosition,
-        recordingMbid: t.recordingMbid,
-        recordingTitle: t.recordingTitle,
+        mediumPosition: track.mediumPosition,
+        trackPosition: track.trackPosition,
+        recordingMbid: track.recordingMbid,
+        recordingTitle: track.recordingTitle,
         aliasName,
         matchType,
-        sourceUrl: srcUrlNormalized,
+        sourceUrl,
       });
     }
 
-    return rows;
+    return {
+      rows,
+      unmatched,
+      targetCount: targetTracks.length,
+    };
   }
 
   function run() {
     if (!helper.isUserLoggedIn()) return;
 
-    const ui = injectUI();
-    let lastRows = null;
+    const { panel } = injectLauncherAndPanel();
 
-    ui.querySelector('#yomo-preview').addEventListener('click', async () => {
+    let lastRows = [];
+
+    panel.querySelector('#yomo-preview').addEventListener('click', async () => {
+      const previewButton = panel.querySelector('#yomo-preview');
+      const submitButton = panel.querySelector('#yomo-submit');
+
       try {
-        const srcInput = ui.querySelector('#yomo-src').value;
-        lastRows = await buildRows(srcInput);
+        previewButton.disabled = true;
+        submitButton.disabled = true;
 
-        setStatus(`Preview ready. ${lastRows.length} aliases found to add.`);
+        setSummary('Loading…');
+
+        const sourceInput = panel.querySelector('#yomo-src').value;
+        const result = await buildRows(sourceInput);
+
+        lastRows = result.rows;
         render(lastRows);
 
-        ui.querySelector('#yomo-submit').disabled = lastRows.length === 0;
-      } catch (e) {
-        console.error(e);
-        setStatus(`Preview failed: ${e.message}`);
-      }
-    });
-
-    ui.querySelector('#yomo-submit').addEventListener('click', async () => {
-      if (!lastRows || !lastRows.length) return;
-
-      const locale = (ui.querySelector('#yomo-locale').value || 'en').trim() || 'en';
-      const primary = !!ui.querySelector('#yomo-primary').checked;
-
-      const typeId = ui.querySelector('#yomo-type')?.value || '';
-
-      setStatus(`Submitting ${lastRows.length} alias edits…`);
-      const trs = Array.from(document.querySelectorAll('#yomo-table tbody tr'));
-
-      // Send sequentially to be gentle
-      let i = 0;
-      const next = () => {
-        if (i >= lastRows.length) {
-          setStatus('Done.');
+        if (!lastRows.length) {
+          setSummary('No matching aliases found.', 'warning');
           return;
         }
 
-        const row = lastRows[i];
-        const st = trs[i]?.querySelector('.st');
-        if (st) st.textContent = 'Sending…';
+        if (result.unmatched) {
+          setSummary(
+            `${lastRows.length} aliases found. ${result.unmatched} track${result.unmatched === 1 ? '' : 's'} could not be matched.`,
+            'warning'
+          );
+        } else {
+          setSummary(`${lastRows.length} aliases found.`);
+        }
+
+        updateSubmitButton();
+      } catch (error) {
+        console.error(error);
+        lastRows = [];
+        render([]);
+        setSummary(error.message || 'Preview failed.', 'error');
+      } finally {
+        previewButton.disabled = false;
+      }
+    });
+
+    panel.querySelector('#yomo-submit').addEventListener('click', () => {
+      if (!lastRows.length) return;
+
+      const indexes = selectedIndexes();
+      if (!indexes.length) return;
+
+      const locale =
+        (panel.querySelector('#yomo-locale').value || 'en').trim() || 'en';
+
+      const primary = !!panel.querySelector('#yomo-primary').checked;
+      const typeId = panel.querySelector('#yomo-type')?.value || '';
+
+      const submitButton = panel.querySelector('#yomo-submit');
+      const previewButton = panel.querySelector('#yomo-preview');
+
+      submitButton.disabled = true;
+      previewButton.disabled = true;
+
+      let position = 0;
+      let successCount = 0;
+      let failedCount = 0;
+
+      const next = () => {
+        if (position >= indexes.length) {
+          previewButton.disabled = false;
+          updateSubmitButton();
+
+          if (failedCount) {
+            setSummary(
+              `Finished: ${successCount} added, ${failedCount} failed.`,
+              'error'
+            );
+          } else {
+            setSummary(`Done. ${successCount} aliases added.`);
+          }
+
+          return;
+        }
+
+        const rowIndex = indexes[position];
+        const row = lastRows[rowIndex];
+        const tr = document.querySelector(
+          `#yomo-table tbody tr[data-idx="${rowIndex}"]`
+        );
+        const checkbox = tr?.querySelector('.yomo-row-check');
+        const errorEl = tr?.querySelector('.yomo-row-error');
+
+        if (errorEl) {
+          errorEl.textContent = '';
+        }
+
+        setSummary(
+          `Submitting ${position + 1} of ${indexes.length}…`
+        );
 
         submitOneAlias(
           {
@@ -308,14 +712,34 @@ if (!/^\/release\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
             typeId,
             sourceUrl: row.sourceUrl,
           },
-          (xhr) => {
-            if (st) st.textContent = `OK (HTTP ${xhr.status})`;
-            i += 1;
+          () => {
+            successCount += 1;
+
+            if (tr) {
+              tr.classList.add('yomo-done');
+              tr.classList.remove('yomo-failed');
+            }
+
+            if (checkbox) {
+              checkbox.checked = false;
+              checkbox.disabled = true;
+            }
+
+            position += 1;
             setTimeout(next, 400);
           },
-          (xhr) => {
-            if (st) st.textContent = `Error (HTTP ${xhr.status})`;
-            i += 1;
+          xhr => {
+            failedCount += 1;
+
+            if (tr) {
+              tr.classList.add('yomo-failed');
+            }
+
+            if (errorEl) {
+              errorEl.textContent = `Error: HTTP ${xhr.status}`;
+            }
+
+            position += 1;
             setTimeout(next, 400);
           }
         );
