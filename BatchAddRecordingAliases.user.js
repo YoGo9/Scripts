@@ -99,30 +99,83 @@ if (!/^\/release\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
     return `Batch Add Recording Alias from release ${sourceReleaseUrl}`;
   }
 
+  function injectStyles() {
+    if (document.getElementById('yomo-styles')) return;
+    const style = document.createElement('style');
+    style.id = 'yomo-styles';
+    style.textContent = `
+      #yomo-box {
+        margin: 10px 0;
+        padding: 10px;
+        border: 1px solid var(--border, #ccc);
+        background: var(--background, #fff);
+        color: var(--text, inherit);
+      }
+      #yomo-box .yomo-row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      #yomo-box .yomo-title {
+        font-weight: 600;
+      }
+      #yomo-src {
+        width: 520px;
+        max-width: 100%;
+      }
+      #yomo-box .yomo-control {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+      }
+      #yomo-locale {
+        width: 70px;
+      }
+      #yomo-status {
+        margin-top: 8px;
+        white-space: pre-wrap;
+        color: var(--text-dimmed, inherit);
+      }
+      #yomo-table {
+        margin-top: 8px;
+        max-height: 320px;
+        overflow: auto;
+      }
+      #yomo-table table.tbl {
+        width: 100%;
+      }
+      #yomo-table .yomo-mbid {
+        opacity: .65;
+        font-size: 11px;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
   function injectUI() {
+    injectStyles();
+
     const box = document.createElement('div');
-    box.style.border = '1px solid #ccc';
-    box.style.padding = '10px';
-    box.style.margin = '10px 0';
-    box.style.background = '#fff';
+    box.id = 'yomo-box';
 
     box.innerHTML = `
-      <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-        <span style="font-weight:600;">Copy track titles → recording aliases</span>
+      <div class="yomo-row">
+        <span class="yomo-title">Copy track titles → recording aliases</span>
 
-        <input id="yomo-src" style="width:520px; max-width:100%;" placeholder="Paste SOURCE release URL or MBID">
+        <input id="yomo-src" placeholder="Paste SOURCE release URL or MBID">
 
-        <label style="display:flex; gap:6px; align-items:center;">
+        <label class="yomo-control">
           Type:
           <span id="yomo-type-wrap">${aliases.type}</span>
         </label>
 
-        <label style="display:flex; gap:6px; align-items:center;">
+        <label class="yomo-control">
           Locale:
-          <input id="yomo-locale" style="width:70px;" value="en">
+          <input id="yomo-locale" value="en">
         </label>
 
-        <label style="display:flex; gap:6px; align-items:center;">
+        <label class="yomo-control">
           <input id="yomo-primary" type="checkbox">
           Primary
         </label>
@@ -131,8 +184,8 @@ if (!/^\/release\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
         <button id="yomo-submit" type="button" disabled>Submit</button>
       </div>
 
-      <div id="yomo-status" style="margin-top:8px; white-space:pre-wrap;"></div>
-      <div id="yomo-table" style="margin-top:8px; max-height:320px; overflow:auto;"></div>
+      <div id="yomo-status"></div>
+      <div id="yomo-table"></div>
     `;
 
     (document.querySelector('#content') || document.body).prepend(box);
@@ -154,7 +207,7 @@ if (!/^\/release\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
     if (!wrap) return;
 
     wrap.innerHTML = `
-      <table class="tbl" style="width:100%;">
+      <table class="tbl">
         <thead>
           <tr>
             <th>Medium</th>
@@ -173,7 +226,7 @@ if (!/^\/release\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
                 <a href="${HOST}/recording/${r.recordingMbid}" target="_blank" rel="noreferrer noopener">
                   ${esc(r.recordingTitle || '(recording)')}
                 </a>
-                <div style="opacity:.65; font-size:11px;">${esc(r.recordingMbid)}</div>
+                <div class="yomo-mbid">${esc(r.recordingMbid)}</div>
               </td>
               <td>${esc(r.aliasName)}</td>
               <td class="st" title="${esc(r.matchType)}"></td>

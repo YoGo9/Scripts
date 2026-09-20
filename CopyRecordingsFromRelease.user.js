@@ -21,33 +21,122 @@
 
     // ── UI injection ──────────────────────────────────────────────────────────
 
+    function injectStyles() {
+        if (document.getElementById('cfr-styles')) return;
+        const style = document.createElement('style');
+        style.id = 'cfr-styles';
+        style.textContent = `
+            #cfr-widget {
+                margin: 12px 0 0 0;
+                padding: 10px 12px;
+                background: var(--background-accent, #f0f4ff);
+                border: 1px solid var(--border-accent, #99a8d0);
+                border-radius: 4px;
+                color: var(--text, inherit);
+                font-size: 13px;
+                clear: both;
+            }
+            #cfr-widget > strong {
+                display: block;
+                margin-bottom: 6px;
+            }
+            #cfr-suggestions {
+                display: none;
+                margin-bottom: 8px;
+            }
+            .cfr-section-title {
+                margin-bottom: 4px;
+                font-weight: bold;
+                font-size: 12px;
+                color: var(--text-dimmed, #444);
+            }
+            .cfr-input-row {
+                display: flex;
+                gap: 6px;
+                align-items: center;
+                flex-wrap: wrap;
+            }
+            #cfr-input {
+                flex: 1;
+                min-width: 220px;
+                padding: 4px 6px;
+                font-size: 13px;
+                border: 1px solid var(--border, #aaa);
+                border-radius: 3px;
+            }
+            #cfr-btn {
+                padding: 4px 10px;
+                font-size: 13px;
+                cursor: pointer;
+                border-radius: 3px;
+                border: 1px solid var(--border, #888);
+                background: var(--background-emphasis, #e8eaf0);
+                color: var(--text, inherit);
+                filter: none;
+            }
+            #cfr-target-chooser {
+                display: none;
+                margin-top: 8px;
+            }
+            .cfr-btn-item {
+                display: block;
+                width: 100%;
+                text-align: left;
+                margin-bottom: 3px;
+                padding: 4px 7px;
+                font-size: 12px;
+                cursor: pointer;
+                border: 1px solid var(--border, #bbb);
+                border-radius: 3px;
+                background: var(--background, #fff);
+                color: var(--text, inherit);
+                filter: none;
+            }
+            .cfr-meta {
+                color: var(--text-dimmed, #666);
+                font-weight: normal;
+            }
+            #cfr-status {
+                margin-top: 5px;
+                min-height: 16px;
+                font-style: italic;
+                color: var(--text-dimmed, #555);
+            }
+            #cfr-status.cfr-status-error {
+                color: #a00;
+            }
+            #cfr-status.cfr-status-success {
+                color: #007700;
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
     function injectUI() {
         if (document.getElementById('cfr-widget')) return;
         const anchor = document.querySelector('.changes');
         if (!anchor) return;
 
+        injectStyles();
+
         const wrapper = document.createElement('div');
         wrapper.id = 'cfr-widget';
-        wrapper.style.cssText = 'margin:12px 0 0 0;padding:10px 12px;background:#f0f4ff;border:1px solid #99a8d0;border-radius:4px;font-size:13px;clear:both;';
 
         wrapper.innerHTML =
-            '<strong style="display:block;margin-bottom:6px;">&#x1F4CB; Copy recordings from another release or medium</strong>' +
+            '<strong>&#x1F4CB; Copy recordings from another release or medium</strong>' +
             // Suggestions section (hidden until populated)
-            '<div id="cfr-suggestions" style="display:none;margin-bottom:8px;">' +
-                '<div style="margin-bottom:4px;font-weight:bold;font-size:12px;color:#444;">Releases in this release group:</div>' +
+            '<div id="cfr-suggestions">' +
+                '<div class="cfr-section-title">Releases in this release group:</div>' +
                 '<div id="cfr-suggestion-list"></div>' +
             '</div>' +
             // Manual paste section
-            '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">' +
-                '<input id="cfr-input" type="text" placeholder="Or paste a release/medium MBID or URL\u2026"' +
-                ' style="flex:1;min-width:220px;padding:4px 6px;font-size:13px;border:1px solid #aaa;border-radius:3px;" />' +
-                '<button id="cfr-btn" type="button"' +
-                ' style="padding:4px 10px;font-size:13px;cursor:pointer;border-radius:3px;border:1px solid #888;background:#e8eaf0;">' +
-                'Apply</button>' +
+            '<div class="cfr-input-row">' +
+                '<input id="cfr-input" type="text" placeholder="Or paste a release/medium MBID or URL\u2026" />' +
+                '<button id="cfr-btn" type="button">Apply</button>' +
             '</div>' +
             // Target-medium chooser (hidden until needed)
-            '<div id="cfr-target-chooser" style="display:none;margin-top:8px;"></div>' +
-            '<div id="cfr-status" style="margin-top:5px;min-height:16px;font-style:italic;color:#555;"></div>';
+            '<div id="cfr-target-chooser"></div>' +
+            '<div id="cfr-status"></div>';
 
         anchor.appendChild(wrapper);
 
@@ -130,9 +219,9 @@
 
             var btn = document.createElement('button');
             btn.type = 'button';
-            btn.style.cssText = 'display:block;width:100%;text-align:left;margin-bottom:3px;padding:4px 7px;font-size:12px;cursor:pointer;border:1px solid #bbb;border-radius:3px;background:#fff;';
+            btn.className = 'cfr-btn-item';
             btn.innerHTML = '<strong>' + escapeHtml(title) + '</strong>' +
-                (meta ? ' <span style="color:#666;font-weight:normal;">' + escapeHtml(meta) + '</span>' : '');
+                (meta ? ' <span class="cfr-meta">' + escapeHtml(meta) + '</span>' : '');
 
             btn.addEventListener('click', function () {
                 applyFromMBID(mbid);
@@ -225,7 +314,11 @@
 
     function setStatus(msg, color) {
         var el = document.getElementById('cfr-status');
-        if (el) { el.textContent = msg; el.style.color = color || '#555'; }
+        if (!el) return;
+        el.textContent = msg;
+        el.className = color === '#a00' ? 'cfr-status-error'
+                     : color === '#007700' ? 'cfr-status-success'
+                     : '';
     }
 
     function clearTargetChooser() {
@@ -376,13 +469,13 @@
         var chooser = document.getElementById('cfr-target-chooser');
         if (!chooser) return;
         chooser.innerHTML =
-            '<div style="margin-bottom:4px;font-weight:bold;font-size:12px;color:#444;">' +
+            '<div class="cfr-section-title">' +
             'Source ' + escapeHtml(sourceLabel) + ' \u2014 apply to which medium of this release?</div>';
 
         targetMediums.forEach(function (m) {
             var btn = document.createElement('button');
             btn.type = 'button';
-            btn.style.cssText = 'display:block;width:100%;text-align:left;margin-bottom:3px;padding:4px 7px;font-size:12px;cursor:pointer;border:1px solid #bbb;border-radius:3px;background:#fff;';
+            btn.className = 'cfr-btn-item';
             var name = m.name && m.name() ? ' \u201C' + m.name() + '\u201D' : '';
             btn.textContent = 'Medium ' + m.position() + name + ' \u00B7 ' + m.tracks().length + ' tracks';
             btn.addEventListener('click', function () {
@@ -429,4 +522,4 @@
     injectUI();
 
 })();
-                
+
