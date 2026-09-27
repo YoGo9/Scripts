@@ -56,6 +56,51 @@ if (!/^\/release\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
     return r.json();
   }
 
+  async function prefillTranslatedSource(input, setTranslationLocale) {
+    let edited = false;
+    const markEdited = () => { edited = true; };
+    input.addEventListener('input', markEdited);
+    try {
+      const response = await fetch(
+        `${HOST}/ws/2/release/${currentReleaseMbid()}?inc=release-rels&fmt=json`,
+        { headers: { Accept: 'application/json' } }
+      );
+      if (!response.ok) throw new Error(`Release relationships fetch failed ${response.status}`);
+      const release = await response.json();
+      const translation = (release.relations || []).find(relation =>
+        relation.type === 'transl-tracklisting' &&
+        UUID_RE.test(relation.release?.id || '')
+      );
+      // Keep anything the user entered while the request was pending.
+      if (translation && !edited && !input.value.trim()) {
+        input.value = `${HOST}/release/${translation.release.id}`;
+        await setTranslationLocale(translation.release, () => !edited);
+      }
+    } catch (error) {
+      console.warn('Could not prefill the translated track listing source:', error);
+    } finally {
+      input.removeEventListener('input', markEdited);
+    }
+  }
+
+  async function localeForLanguage(language, select) {
+    if (!language) return null;
+    const supported = code => code && Array.from(select.options).some(option => option.value === code);
+    if (supported(language)) return language;
+    // Release languages use ISO 639-2 codes; locales usually use ISO 639-1.
+    const response = await fetch(`${HOST}/ws/js/type-info/language`, {
+      headers: { Accept: 'application/json' },
+    });
+    if (!response.ok) throw new Error(`Language lookup failed ${response.status}`);
+    const data = await response.json();
+    const match = data.language_list.find(item =>
+      [item.iso_code_1, item.iso_code_2b, item.iso_code_2t, item.iso_code_3].includes(language)
+    );
+    return match
+      ? [match.iso_code_1, match.iso_code_3, match.iso_code_2t, match.iso_code_2b].find(supported)
+      : null;
+  }
+
   function flattenTracks(releaseJson) {
     const out = [];
     for (const medium of (releaseJson.media || [])) {
@@ -130,7 +175,8 @@ if (!/^\/release\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
         align-items: center;
       }
       #yomo-locale {
-        width: 70px;
+        width: 260px;
+        max-width: 100%;
       }
       #yomo-status {
         margin-top: 8px;
@@ -172,7 +218,9 @@ if (!/^\/release\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
         <label class="yomo-control">
           Locale:
-          <input id="yomo-locale" value="en">
+          <select id="yomo-locale" disabled>
+            <option value="">Loading locales…</option>
+          </select>
         </label>
 
         <label class="yomo-control">
@@ -200,6 +248,39 @@ if (!/^\/release\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
   function setStatus(msg) {
     const el = document.getElementById('yomo-status');
     if (el) el.textContent = msg;
+  }
+
+  async function loadLocales() {
+    // MusicBrainz generates this JSON from its ALIAS_LOCALES constant.
+    const response = await fetch(`${HOST}/static/scripts/common/constants/locales.json`, {
+      headers: { Accept: 'application/json' },
+    });
+    if (!response.ok) throw new Error(`Could not load locales (HTTP ${response.status}).`);
+    const locales = await response.json();
+    if (!locales || typeof locales !== 'object' || Array.isArray(locales) ||
+        typeof locales.en !== 'string' ||
+        !Object.values(locales).every(name => typeof name === 'string')) {
+      throw new Error('Could not read MusicBrainz locale options. Try Preview again.');
+    }
+    // Match the alias form's descriptive names and indented locale variants.
+    const localeNames = {
+      skr: 'Saraiki', skr_PK: 'Saraiki Pakistan',
+      lld: 'Ladin', lld_IT: 'Ladin Italy',
+      mhn: 'Mócheno', mhn_IT: 'Mócheno Italy',
+    };
+    const options = Object.entries(locales)
+      .map(([code, name]) => [code, localeNames[code] || name])
+      .sort(([codeA, nameA], [codeB, nameB]) => nameA.localeCompare(nameB) || codeA.localeCompare(codeB));
+    options.unshift(['', '(No locale)']);
+    const select = document.getElementById('yomo-locale');
+    select.replaceChildren(...options.map(([code, name]) => {
+      const copy = document.createElement('option');
+      copy.value = code;
+      copy.textContent = `${code.includes('_') ? '\u00a0\u00a0\u00a0' : ''}${name}`;
+      return copy;
+    }));
+    select.value = 'en';
+    select.disabled = false;
   }
 
   function render(rows) {
@@ -313,11 +394,34 @@ if (!/^\/release\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
     const ui = injectUI();
     let lastRows = null;
+    let localesPromise = null;
+    const ensureLocales = () => {
+      if (!localesPromise) {
+        localesPromise = loadLocales().catch(error => {
+          localesPromise = null;
+          throw error;
+        });
+      }
+      return localesPromise;
+    };
+    ensureLocales().catch(error => setStatus(error.message));
+    const localeSelect = ui.querySelector('#yomo-locale');
+    let localeEdited = false;
+    localeSelect.addEventListener('change', () => { localeEdited = true; });
+    prefillTranslatedSource(ui.querySelector('#yomo-src'), async (release, sourceUnchanged) => {
+      const language = release['text-representation']?.language;
+      if (!language) return;
+      await ensureLocales();
+      const locale = await localeForLanguage(language, localeSelect);
+      if (locale && !localeEdited && sourceUnchanged()) localeSelect.value = locale;
+    });
 
     ui.querySelector('#yomo-preview').addEventListener('click', async () => {
+      ui.querySelector('#yomo-submit').disabled = true;
       try {
         const srcInput = ui.querySelector('#yomo-src').value;
         lastRows = await buildRows(srcInput);
+        if (lastRows.length) await ensureLocales();
 
         setStatus(`Preview ready. ${lastRows.length} aliases found to add.`);
         render(lastRows);
@@ -332,8 +436,13 @@ if (!/^\/release\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
     ui.querySelector('#yomo-submit').addEventListener('click', async () => {
       if (!lastRows || !lastRows.length) return;
 
-      const locale = (ui.querySelector('#yomo-locale').value || 'en').trim() || 'en';
+      if (ui.querySelector('#yomo-locale').disabled) return;
+      const locale = ui.querySelector('#yomo-locale').value;
       const primary = !!ui.querySelector('#yomo-primary').checked;
+      if (primary && !locale) {
+        setStatus('Select a locale to make these aliases primary.');
+        return;
+      }
 
       const typeId = ui.querySelector('#yomo-type')?.value || '';
 
