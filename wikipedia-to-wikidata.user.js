@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name          MusicBrainz Wikipedia to Wikidata Converter
-// @version       2026.8.19
+// @version       2026.11.9
 // @namespace     https://github.com/YoGo9
 // @author        YoGo9
 // @description   Convert Wikipedia links to their equivalent Wikidata entities
@@ -11,7 +11,6 @@
 // @grant         GM_xmlhttpRequest
 // @connect       wikipedia.org
 // @connect       wikidata.org
-// @connect       musicbrainz.org
 // @match         *://*.musicbrainz.org/area/*
 // @match         *://*.musicbrainz.org/artist/*
 // @match         *://*.musicbrainz.org/event/*
@@ -20,7 +19,6 @@
 // @match         *://*.musicbrainz.org/place/*
 // @match         *://*.musicbrainz.org/release-group/*
 // @match         *://*.musicbrainz.org/series/*
-// @match         *://*.musicbrainz.org/url/*
 // @match         *://*.musicbrainz.org/work/*
 // @match         *://*.musicbrainz.org/dialog*
 // @match         *://*.musicbrainz.eu/area/*
@@ -31,7 +29,6 @@
 // @match         *://*.musicbrainz.eu/place/*
 // @match         *://*.musicbrainz.eu/release-group/*
 // @match         *://*.musicbrainz.eu/series/*
-// @match         *://*.musicbrainz.eu/url/*
 // @match         *://*.musicbrainz.eu/work/*
 // @match         *://*.musicbrainz.eu/dialog*
 // ==/UserScript==
@@ -86,81 +83,11 @@
     }
 
     /**
-     * Extracts the entity type and ID from a MusicBrainz URL (can be incomplete and/or with additional path components and query parameters).
-     * @param {string} url URL of a MusicBrainz entity page.
-     * @returns {{ type: string, mbid: string } | undefined} Type and ID.
-     */
-    function extractEntityFromURL(url) {
-        const entity = url.match(/(area|artist|event|genre|instrument|label|mbid|place|recording|release|release-group|series|url|work)\/([0-9a-f-]{36})(?:$|\/|\?)/);
-        return entity ? {
-            type: entity[1],
-            mbid: entity[2]
-        } : undefined;
-    }
-
-    /**
      * Returns a promise that resolves after the given delay.
      * @param {number} ms Delay in milliseconds.
      */
     function delay(ms) {
         return new Promise((resolve) => setTimeout(resolve, ms));
-    }
-
-    // Rate limiting implementation
-    function rateLimitedQueue(operation, interval) {
-        let queue = Promise.resolve();
-        return (...args) => {
-            const result = queue.then(() => operation(...args));
-            queue = queue.then(() => delay(interval), () => delay(interval));
-            return result;
-        };
-    }
-
-    /**
-     * Limits the number of requests for the given operation within a time interval.
-     * @param {Function} operation Operation that should be rate-limited.
-     * @param {number} interval Time interval (in ms).
-     * @param {number} requestsPerInterval Maximum number of requests within the interval.
-     * @returns {Function} Rate-limited version of the given operation.
-     */
-    function rateLimit(operation, interval, requestsPerInterval = 1) {
-        if (requestsPerInterval == 1) {
-            return rateLimitedQueue(operation, interval);
-        }
-        const queues = Array(requestsPerInterval).fill().map(() => rateLimitedQueue(operation, interval));
-        let queueIndex = 0;
-        return (...args) => {
-            queueIndex = (queueIndex + 1) % requestsPerInterval;
-            return queues[queueIndex](...args);
-        };
-    }
-
-    /**
-     * Calls to the MusicBrainz API are limited to one request per second.
-     * https://musicbrainz.org/doc/MusicBrainz_API
-     */
-    const callAPI = rateLimit(fetch, 1000);
-
-    /**
-     * Makes a request to the MusicBrainz API of the currently used server and returns the results as JSON.
-     * @param {string} endpoint Endpoint (e.g. the entity type) which should be queried.
-     * @param {Record<string,string>} query Query parameters.
-     * @param {string[]} inc Include parameters which should be added to the query parameters.
-     */
-    async function fetchFromAPI(endpoint, query = {}, inc = []) {
-        if (inc.length) {
-            query.inc = inc.join(' ');
-        }
-        query.fmt = 'json';
-        const headers = {
-            'Accept': 'application/json',
-        };
-        const response = await callAPI(`https://musicbrainz.org/ws/2/${endpoint}?${new URLSearchParams(query)}`, { headers });
-        if (response.ok) {
-            return response.json();
-        } else {
-            throw response;
-        }
     }
 
     function fetchURL(url, options) {
@@ -625,34 +552,23 @@
     }
 
     function highlightWikipediaLinks() {
+        const entityPath = document.location.pathname.match(new RegExp(
+            `^/(${WIKIPEDIA_ENTITY_ALTERNATION})/[0-9a-f-]{36}(?=/|$)`, 'i'
+        ))?.[0];
+        if (!entityPath) {
+            return;
+        }
+
         document.querySelectorAll(".external_links .wikipedia-favicon")
             .forEach(function (listItem) {
-                const wikiLink = listItem.querySelector('a').href;
-                if (isWikipediaLink(wikiLink) && !isWikidataLink(wikiLink)) {
+                const wikiLink = listItem.querySelector('a')?.href;
+                if (wikiLink && isWikipediaLink(wikiLink)) {
                     const linkButton = document.createElement('a');
                     linkButton.className = "styled-button wikidata-converter-button";
                     linkButton.style.float = "right";
-                    linkButton.textContent = "Convert to Wikidata";
-                    const entity = extractEntityFromURL(document.location.href);
-                    fetchFromAPI(entity.type + "/" + entity.mbid,
-                        { "inc": "url-rels" })
-                        .then((response) => {
-                            let urlID = false;
-                            for (const urlObject of response.relations) {
-                                if (urlObject.url.resource == wikiLink) {
-                                    urlID = urlObject.url.id;
-                                    break;
-                                }
-                            }
-                            if (urlID) {
-                                linkButton.href = document.location.origin + "/url/" + urlID + "/edit";
-                                listItem.appendChild(linkButton);
-                            }
-                        })
-                        .catch((error) => {
-                            console.error(error);
-                            displayError(listItem, error, ".wikidata-converter-button");
-                        });
+                    linkButton.textContent = "Convert on edit page";
+                    linkButton.href = `${entityPath}/edit#external-links-editor-container`;
+                    listItem.appendChild(linkButton);
                 }
             });
     }
@@ -689,44 +605,6 @@
         }
     }
 
-    function fixLinkURLEdit(row) {
-        const urlInput = row.querySelector("input#id-edit-url\\.url");
-        const button = row.querySelector("button.wikidata-converter-button");
-        urlInput.setAttribute("oldLink", urlInput.value);
-        button.disabled = true;
-        clearError(row);
-        getWikidataUrlFromWikipedia(urlInput.value)
-            .then((wikidataURL) => {
-                setReactInputValue(urlInput, wikidataURL);
-                addMessageToEditNote(urlInput.getAttribute("oldLink")
-                    + " → "
-                    + wikidataURL);
-            })
-            .catch((error) => {
-                console.warn(error);
-                displayError(row, error, ".wikidata-converter-button");
-            })
-            .finally(() => {
-                button.disabled = false;
-            });
-    }
-
-    function runOnURLEditPage() {
-        const urlInput = document.querySelector("input#id-edit-url\\.url");
-        if (!urlInput) {
-            return;
-        }
-        if (!isWikipediaLink(urlInput.value) || isWikidataLink(urlInput.value)) {
-            return;
-        }
-        const button = document.createElement("button");
-        button.type = "button";
-        button.textContent = "Convert to Wikidata";
-        button.className = "styled-button wikidata-converter-button";
-        button.addEventListener("click", function () { fixLinkURLEdit(urlInput.parentElement); });
-        urlInput.insertAdjacentElement("afterend", button);
-    }
-
     function isEntityEditPage() {
         return new RegExp(
             `^/(${WIKIPEDIA_ENTITY_ALTERNATION})/[0-9a-f-]{36}/edit/?$`, 'i'
@@ -739,8 +617,6 @@
         if (dialogPath && new RegExp(`^/(${WIKIPEDIA_ENTITY_ALTERNATION})/create`).test(dialogPath)) {
             runUserscript();
         }
-    } else if (location.match("^https?://((beta|test)\\.)?musicbrainz\\.(org|eu)/url")) {
-        runOnURLEditPage();
     } else if (isEntityEditPage()) {
         runOnEntityEditPage();
     } else {
